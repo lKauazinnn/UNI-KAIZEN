@@ -1,5 +1,15 @@
 # Supabase — configuração
 
+> **Status atual (set/2026):** o projeto `plataforma-kaizen` (ref `nbkzzxlxiqgbynjrobit`,
+> região `us-east-2`) já está configurado:
+>
+> - `backend/.env` preenchido com `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+>   `SUPABASE_ANON_KEY`, `JWT_SECRET` e `DATABASE_URL` (pooler).
+> - `schema.sql` + `seed.sql` **já aplicados** no banco (organização demo, 4 usuários,
+>   turma e 1 questão — senha `123456`).
+> - Confirmar em `backend/.env`: o valor de `DATABASE_URL` usa a senha fornecida
+>   (string base64). Se o Prisma não conectar, troque pela senha real do dashboard.
+
 ## 1. Schema
 
 Execute `backend/schema.sql` no **SQL Editor** do seu projeto Supabase (cria tabelas, índices):
