@@ -1,0 +1,253 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  turmas    Turma[]
+  catalogs  CatalogItem[]
+  importJobs ImportJob[]
+  questions Question[]
+  exams     Exam[]
+  auditLogs AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  name           String
+  password       String
+  role           String   @default("aluno") // admin | professor | aluno
+  organizationId String
+  isActive       Boolean  @default(true)
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  turmas       Turma[]       @relation("TurmaProfessor")
+  memberships  TurmaMember[] @relation("TurmaMemberUser")
+  importJobs   ImportJob[]
+  questions    Question[]
+  exams        Exam[]
+  attempts     Attempt[]
+  notices      Notice[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Turma {
+  id             String   @id @default(uuid())
+  name           String
+  organizationId String
+  professorId    String
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  professor    User         @relation("TurmaProfessor", fields: [professorId], references: [id], onDelete: Cascade)
+
+  members  TurmaMember[]
+  exams    Exam[]
+  notices  Notice[]
+
+  @@map("turmas")
+}
+
+model TurmaMember {
+  id        String   @id @default(uuid())
+  turmaId   String
+  userId    String
+  status    String   @default("ativo") // ativo | pendente
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  turma Turma @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  user  User  @relation("TurmaMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([turmaId, userId])
+  @@map("turma_members")
+}
+
+// Catálogo único: disciplina → tópico → subtópico opcional.
+model CatalogItem {
+  id             String   @id @default(uuid())
+  organizationId String
+  level          Int      // 1 = disciplina, 2 = tópico, 3 = subtópico
+  name           String
+  parentId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  questions Question[]
+
+  @@unique([organizationId, parentId, name])
+  @@map("catalog_items")
+}
+
+model ImportJob {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  fileName       String
+  status         String   @default("processing") // processing | completed | failed
+  errorMessage   String?
+  totalQuestions Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  questions Question[]
+
+  @@map("import_jobs")
+}
+
+model Question {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  importJobId        String?
+  createdBy          String
+  number             Int?
+  statement          String
+  alternatives       Json     // [{ letter: "A", text: "..." }]
+  images             Json     // [{ url?: string, caption?: string, source?: string }]
+  gabarito           String?
+  gabaritoOrigin     String?  // document | ai | professor
+  gabaritoConfidence Float?
+  catalogItemId      String?
+  classificationSource String?  // ai | professor
+  status             String   @default("pending") // pending | approved | rejected
+  rejectionReason    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importJob    ImportJob?   @relation(fields: [importJobId], references: [id], onDelete: SetNull)
+  creator      User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  catalogItem  CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  examQuestions ExamQuestion[]
+  answers       Answer[]
+
+  @@map("questions")
+}
+
+model Exam {
+  id             String   @id @default(uuid())
+  title          String
+  turmaId        String
+  organizationId String
+  createdBy      String
+  status         String   @default("draft") // draft | published | archived
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  turma      Turma        @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  creator    User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  questions  ExamQuestion[]
+  attempts   Attempt[]
+
+  @@map("exams")
+}
+
+model ExamQuestion {
+  id         String   @id @default(uuid())
+  examId     String
+  questionId String
+  order      Int
+  createdAt  DateTime @default(now())
+
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, order])
+  @@map("exam_questions")
+}
+
+model Attempt {
+  id          String    @id @default(uuid())
+  examId      String
+  userId      String
+  status      String    @default("in_progress") // in_progress | submitted
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  exam   Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@unique([examId, userId])
+  @@map("attempts")
+}
+
+model Answer {
+  id                String   @id @default(uuid())
+  attemptId         String
+  questionId        String
+  selected          String?  // letra (A, B, C, D, E)
+  isCorrect         Boolean?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@map("answers")
+}
+
+model Notice {
+  id             String   @id @default(uuid())
+  turmaId        String
+  createdBy      String
+  message        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  turma  Turma @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@map("notices")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  action         String   // publish | delete | approve | create | update | ...
+  entityType     String
+  entityId       String?
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
