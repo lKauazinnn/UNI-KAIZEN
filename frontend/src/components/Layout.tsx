@@ -12,6 +12,7 @@ import {
   FlaskConical,
   BookOpen,
   Timer,
+  UserCog,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -30,6 +31,11 @@ const navProfessor = [
 const navAluno = [
   { to: '/aluno/simulados', label: 'Simulados', icon: BookOpen },
   { to: '/aluno/resultados', label: 'Meus resultados', icon: BarChart3 },
+];
+
+const navAdmin = [
+  { to: '/admin/dashboard', label: 'Visão geral', icon: BarChart3 },
+  { to: '/admin/usuarios', label: 'Usuários', icon: UserCog },
 ];
 
 function SidebarItem({ to, label, icon: Icon }: { to: string; label: string; icon: any }) {
@@ -91,6 +97,15 @@ export function Layout({ children }: { children: ReactNode }) {
             <>
               <p className="px-4 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Conteúdo</p>
               <SidebarItem to="/professor/questoes" label="Banco de questões" icon={FileText} />
+            </>
+          )}
+
+          {user?.role === 'admin' && (
+            <>
+              <p className="px-4 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Administração</p>
+              {navAdmin.map((item) => (
+                <SidebarItem key={item.to} {...item} />
+              ))}
             </>
           )}
         </nav>

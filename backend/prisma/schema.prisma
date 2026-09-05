@@ -33,6 +33,7 @@ model User {
   password       String
   role           String   @default("aluno") // admin | professor | aluno
   organizationId String
+  isAdmin        Boolean  @default(false)
   isActive       Boolean  @default(true)
   resetPasswordToken   String?
   resetPasswordExpires DateTime?

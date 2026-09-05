@@ -216,6 +216,26 @@ export interface ProfessorDashboard {
   recentExams: Array<{ id: string; title: string; status: string; publishedAt?: string | null; createdAt: string; turmas?: { name: string } | { id: string; name: string } }>;
 }
 
+export interface GeralDashboard {
+  totais: {
+    turmas: number;
+    questoes: number;
+    professores: number;
+    alunos: number;
+    totalEntregas: number;
+  };
+  questoesPorStatus: Array<{ name: string; value: number }>;
+  simulados: Array<{ name: string; value: number }>;
+  eficiencia: {
+    totalAttempts: number;
+    totalEntregas: number;
+    totalAlunosVinculados: number;
+  };
+  entregasPorDia: Array<{ data: string; entregas: number }>;
+  mediaPorSimulado: Array<{ id: string; titulo: string; turma: string; media: number; entregas: number }>;
+  topAlunos: Array<{ nome: string; acertos: number; respondidas: number; media: number }>;
+}
+
 export interface AlunoDashboard {
   exams: Exam[];
   notices: Notice[];

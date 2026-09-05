@@ -35,13 +35,13 @@ export default function Register() {
     <AuthShell
       footer={
         <>
-          JÃ¡ tem conta? <AuthLink to="/login">Entrar</AuthLink>
+          Já tem conta? <AuthLink to="/login">Entrar</AuthLink>
         </>
       }
     >
       <h2 className="text-xl font-bold text-slate-100 mb-1">Criar conta</h2>
       <p className="text-sm text-slate-400 mb-6">
-        Use o mesmo identificador de organizaÃ§Ã£o para que professores e alunos fiquem na mesma instituiÃ§Ã£o.
+        Use o mesmo identificador de organização para que professores e alunos fiquem na mesma instituição.
       </p>
 
       {error && (
@@ -56,7 +56,7 @@ export default function Register() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="MÃ­nimo 6 caracteres"
+          placeholder="Mínimo 6 caracteres"
           minLength={6}
           required
         />
@@ -65,11 +65,11 @@ export default function Register() {
           <option value="professor">Professor</option>
         </Select>
         <Input
-          label="OrganizaÃ§Ã£o"
+          label="Organização"
           value={organizationSlug}
           onChange={(e) => setOrganizationSlug(e.target.value)}
           placeholder="Ex.: colegio-einstein"
-          hint="Professores e alunos da mesma instituiÃ§Ã£o usam o mesmo nome."
+          hint="Professores e alunos da mesma instituição usam o mesmo nome."
           required
         />
         <Button type="submit" className="w-full" loading={loading}>

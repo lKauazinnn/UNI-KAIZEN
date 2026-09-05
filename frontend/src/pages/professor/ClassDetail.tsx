@@ -22,6 +22,7 @@ export default function ClassDetail() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [removeId, setRemoveId] = useState<string | null>(null);
+  const [createdStudent, setCreatedStudent] = useState<{ name?: string; email: string; password: string } | null>(null);
 
   const load = () => {
     if (!id) return;
@@ -40,7 +41,11 @@ export default function ClassDetail() {
     setSaving(true);
     try {
       const { data } = await api.post(`/classes/${id}/students/link`, { email: linkEmail });
-      setFeedback(`Aluno ${data.student?.name ?? linkEmail} vinculado com sucesso.`);
+      if (data?.tempPassword) {
+        setCreatedStudent({ name: data.student?.name, email: data.student?.email ?? linkEmail, password: data.tempPassword });
+      } else {
+        setFeedback(`Aluno ${data.student?.name ?? linkEmail} vinculado com sucesso.`);
+      }
       setLinkOpen(false);
       setLinkEmail('');
       load();
@@ -243,12 +248,21 @@ export default function ClassDetail() {
           </form>
         ) : (
           <div>
-            <p className="text-sm text-slate-400 mb-4">{csvResult.length} linha(s) processadas.</p>
+            <p className="text-sm text-slate-400 mb-4">
+              {csvResult.length} linha(s) processadas. Repasse a senha temporária aos alunos criados — eles devem trocá-la no primeiro acesso.
+            </p>
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {csvResult.map((r, i) => (
-                <div key={i} className="flex items-center justify-between text-sm rounded-lg border border-[color:var(--border)] px-3 py-2">
-                  <span className="text-slate-300 truncate">{r.name ? `${r.name} (${r.email})` : r.email}</span>
-                  <Badge tone={r.status === 'criado' || r.status === 'vinculado' ? 'green' : 'amber'}>{r.status}</Badge>
+                <div key={i} className="flex items-center justify-between gap-3 text-sm rounded-lg border border-[color:var(--border)] px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-slate-300 truncate">{r.name ? `${r.name} (${r.email})` : r.email}</p>
+                    {r.tempPassword ? (
+                      <p className="text-[11px] text-primary-300">Senha temporária: <b>{r.tempPassword}</b></p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500">Já tinha conta — Senha inalterada</p>
+                    )}
+                  </div>
+                  <span className="shrink-0"><Badge tone={r.status === 'criado' || r.status === 'vinculado' ? 'green' : 'amber'}>{r.status}</Badge></span>
                 </div>
               ))}
             </div>
@@ -280,6 +294,18 @@ export default function ClassDetail() {
         confirmLabel="Remover"
         danger
       />
+
+      <Modal open={!!createdStudent} onClose={() => setCreatedStudent(null)} title="Aluno criado">
+        <p className="text-sm text-slate-400 mb-2">
+          O aluno <b className="text-slate-200">{createdStudent?.name ?? createdStudent?.email}</b> foi criado com a senha temporária abaixo. Repasse a senha para o primeiro acesso.
+        </p>
+        <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 font-mono text-lg font-bold text-primary-300 text-center">
+          {createdStudent?.password}
+        </div>
+        <div className="mt-5 flex justify-end">
+          <Button onClick={() => setCreatedStudent(null)}>Entendi</Button>
+        </div>
+      </Modal>
     </div>
   );
 }

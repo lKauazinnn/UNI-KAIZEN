@@ -32,7 +32,8 @@ git remote get-url origin >nul 2>&1
 if errorlevel 1 (
     echo.
     echo  --- Nenhum repositório remoto configurado. ---
-    set /p REMOTO="  URL do repositório no GitHub (ex: https://github.com/usuario/kaizen.git): "
+    set /p REMOTO="  URL do repositório no GitHub [Enter = https://github.com/lKauazinnn/plataforma-kaizen]: "
+    if "!REMOTO!"=="" set "REMOTO=https://github.com/lKauazinnn/plataforma-kaizen"
     git remote add origin "!REMOTO!"
     if errorlevel 1 (
         echo  Falha ao adicionar o remoto. Verifique a URL e tente de novo.

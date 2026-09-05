@@ -31,9 +31,9 @@ export default function ResetPassword() {
     try {
       const { data } = await api.post('/auth/forgot-password', { email });
       if (data?.debugResetUrl) {
-        setMessage(`Modo desenvolvimento â€” link de recuperaÃ§Ã£o: ${data.debugResetUrl}`);
+        setMessage(`Modo desenvolvimento — link de recuperação: ${data.debugResetUrl}`);
       } else {
-        setMessage('Se o e-mail existir, enviaremos as instruÃ§Ãµes de redefiniÃ§Ã£o.');
+        setMessage('Se o e-mail existir, enviaremos as instruções de redefinição.');
       }
       setDone(true);
     } catch (err) {
@@ -50,7 +50,7 @@ export default function ResetPassword() {
     setLoading(true);
     try {
       await api.post('/auth/reset-password', { accessToken, password });
-      setMessage('Senha redefinida com sucesso. FaÃ§a login com a nova senha.');
+      setMessage('Senha redefinida com sucesso. Faça login com a nova senha.');
       setDone(true);
     } catch (err) {
       setError(apiError(err));
@@ -63,7 +63,7 @@ export default function ResetPassword() {
     <AuthShell footer={<AuthLink to="/login">Voltar ao login</AuthLink>}>
       <h2 className="text-xl font-bold text-slate-100 mb-1">Redefinir senha</h2>
       <p className="text-sm text-slate-400 mb-6">
-        {accessToken ? 'Defina uma nova senha para sua conta.' : 'Informe seu e-mail para receber as instruÃ§Ãµes.'}
+        {accessToken ? 'Defina uma nova senha para sua conta.' : 'Informe seu e-mail para receber as instruções.'}
       </p>
 
       {message && (
@@ -73,7 +73,7 @@ export default function ResetPassword() {
 
       {accessToken ? (
         <form onSubmit={doReset} className="space-y-4">
-          <Input label="Nova senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="MÃ­nimo 6 caracteres" minLength={6} required />
+          <Input label="Nova senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6} required />
           <Button type="submit" className="w-full" loading={loading} disabled={done}>
             Redefinir senha
           </Button>
@@ -82,7 +82,7 @@ export default function ResetPassword() {
         <form onSubmit={requestReset} className="space-y-4">
           <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@escola.com" required />
           <Button type="submit" className="w-full" loading={loading} disabled={done}>
-            Enviar instruÃ§Ãµes
+            Enviar instruções
           </Button>
         </form>
       )}

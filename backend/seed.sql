@@ -12,12 +12,12 @@ VALUES ('00000000-0000-0000-0000-000000000001', 'Kaizen Demo', 'kaizen-demo', NO
 
 -- ─── Usuários (senha: 123456) ────────────────────────────────────────────
 -- Hash bcrypt de "123456"
-INSERT INTO users (id, email, name, password, role, "organizationId", "isActive", "createdAt", "updatedAt")
+INSERT INTO users (id, email, name, password, role, "organizationId", "isAdmin", "isActive", "createdAt", "updatedAt")
 VALUES
-  ('00000000-0000-0000-0000-000000000002', 'professor@kaizen.com', 'Professora Ana', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'professor', '00000000-0000-0000-0000-000000000001', true, NOW(), NOW()),
-  ('00000000-0000-0000-0000-000000000003', 'aluno1@kaizen.com', 'Aluno Bruno', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'aluno', '00000000-0000-0000-0000-000000000001', true, NOW(), NOW()),
-  ('00000000-0000-0000-0000-000000000004', 'aluno2@kaizen.com', 'Aluna Carla', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'aluno', '00000000-0000-0000-0000-000000000001', true, NOW(), NOW()),
-  ('00000000-0000-0000-0000-000000000005', 'admin@kaizen.com', 'Admin Kaizen', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'admin', '00000000-0000-0000-0000-000000000001', true, NOW(), NOW());
+  ('00000000-0000-0000-0000-000000000002', 'professor@kaizen.com', 'Professora Ana', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'professor', '00000000-0000-0000-0000-000000000001', false, true, NOW(), NOW()),
+  ('00000000-0000-0000-0000-000000000003', 'aluno1@kaizen.com', 'Aluno Bruno', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'aluno', '00000000-0000-0000-0000-000000000001', false, true, NOW(), NOW()),
+  ('00000000-0000-0000-0000-000000000004', 'aluno2@kaizen.com', 'Aluna Carla', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'aluno', '00000000-0000-0000-0000-000000000001', false, true, NOW(), NOW()),
+  ('00000000-0000-0000-0000-000000000005', 'admin@kaizen.com', 'Admin Kaizen', '$2a$10$Ujg6XexhjQ.Vu8iTcybKoODy0AcQIYv2PLCFUppWhrgEmdHcSxXji', 'admin', '00000000-0000-0000-0000-000000000001', true, true, NOW(), NOW());
 
 -- ─── Turma ───────────────────────────────────────────────────────────────
 INSERT INTO turmas (id, name, "organizationId", "professorId", archived, "createdAt", "updatedAt")

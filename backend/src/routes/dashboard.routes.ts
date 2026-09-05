@@ -7,5 +7,6 @@ const controller = new DashboardController();
 
 router.get('/professor', authMiddleware, (req, res) => controller.professor(req, res));
 router.get('/aluno', authMiddleware, (req, res) => controller.aluno(req, res));
+router.get('/geral', authMiddleware, (req, res) => controller.geral(req, res));
 
 export default router;

@@ -20,6 +20,8 @@ import AlunoExams from './pages/aluno/Exams';
 import TakeExam from './pages/aluno/TakeExam';
 import ExamResult from './pages/aluno/ExamResult';
 import AlunoResults from './pages/aluno/AlunoResults';
+import AdminUsuarios from './pages/admin/Usuarios';
+import AdminDashboard from './pages/admin/Dashboard';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -39,6 +41,13 @@ function AlunoOnly({ children }: { children: React.ReactNode }) {
   const { isProfessor, loading } = useAuth();
   if (loading) return <Spinner label="Carregando..." />;
   if (isProfessor) return <Navigate to="/inicio" replace />;
+  return <>{children}</>;
+}
+
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { isAdmin, loading } = useAuth();
+  if (loading) return <Spinner label="Carregando..." />;
+  if (!isAdmin) return <Navigate to="/inicio" replace />;
   return <>{children}</>;
 }
 
@@ -70,6 +79,9 @@ function App() {
           <Route path="/professor/simulados/novo" element={<Protected><ProfessorOnly><ExamCreate /></ProfessorOnly></Protected>} />
           <Route path="/professor/simulados/:id" element={<Protected><ProfessorOnly><ExamPreview /></ProfessorOnly></Protected>} />
           <Route path="/professor/resultados" element={<Protected><ProfessorOnly><Results /></ProfessorOnly></Protected>} />
+
+          <Route path="/admin/dashboard" element={<Protected><AdminOnly><AdminDashboard /></AdminOnly></Protected>} />
+          <Route path="/admin/usuarios" element={<Protected><AdminOnly><AdminUsuarios /></AdminOnly></Protected>} />
 
           <Route path="/aluno/inicio" element={<Protected><AlunoOnly><AlunoHome /></AlunoOnly></Protected>} />
           <Route path="/aluno/simulados" element={<Protected><AlunoOnly><AlunoExams /></AlunoOnly></Protected>} />

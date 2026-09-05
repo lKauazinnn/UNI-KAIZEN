@@ -2,7 +2,128 @@ import { Response } from 'express';
 import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
 export class DashboardController {
+  // Painel geral do sistema (todo o org, admin + professor)
+  async geral(req: AuthRequest, res: Response) {
+    try {
+      const orgId = req.organizationId!;
+
+      const [tResp, qResp, pResp, aResp] = await Promise.all([
+        supabase.from('turmas').select('id', { count: 'exact', head: true }).eq('organizationId', orgId),
+        supabase.from('questions').select('id', { count: 'exact', head: true }).eq('organizationId', orgId),
+        supabase.from('users').select('id', { count: 'exact', head: true }).eq('organizationId', orgId).eq('role', 'professor'),
+        supabase.from('users').select('id', { count: 'exact', head: true }).eq('organizationId', orgId).eq('role', 'aluno'),
+      ]);
+      const turmas = tResp.count ?? 0;
+      const questoes = qResp.count ?? 0;
+
+      const [{ data: statusRows }, { data: examRows }, { data: attempts }, { data: members }] = await Promise.all([
+        supabase.from('questions').select('status').eq('organizationId', orgId),
+        supabase.from('exams').select('id, title, status, createdBy, turmaId, turmas(name)').eq('organizationId', orgId).order('createdAt', { ascending: false }).limit(200),
+        supabase.from('attempts').select('id, examId, userId, status, submittedAt'),
+        supabase.from('turma_members').select('userId').eq('status', 'ativo'),
+      ]);
+
+      const questaoCounts = { pending: 0, approved: 0, rejected: 0 };
+      for (const q of statusRows ?? []) {
+        if (questaoCounts[q.status as keyof typeof questaoCounts] !== undefined) questaoCounts[q.status as keyof typeof questaoCounts] += 1;
+      }
+
+      const totalAttempts = (attempts ?? []).length;
+      const totalEntregas = (attempts ?? []).filter((a) => a.status === 'submitted').length;
+      const totalAlunosVinculados = (members ?? []).length;
+
+      const attemptsByExam = new Map<string, { correct: number; answered: number; submitted: number }>();
+      for (const attempt of attempts ?? []) {
+        if (attempt.status !== 'submitted') continue;
+        if (!attemptsByExam.has(attempt.examId)) attemptsByExam.set(attempt.examId, { correct: 0, answered: 0, submitted: 0 });
+        attemptsByExam.get(attempt.examId)!.submitted += 1;
+      }
+
+      const { data: allAnswers } = await supabase.from('answers').select('attemptId, isCorrect');
+      for (const ans of allAnswers ?? []) {
+        const acc = attemptsByExam.get(ans.attemptId);
+        if (!acc || ans.isCorrect === undefined || ans.isCorrect === null) continue;
+        acc.answered += 1;
+        if (ans.isCorrect) acc.correct += 1;
+      }
+
+      const entregasPorDia = new Map<string, number>();
+      for (const attempt of attempts ?? []) {
+        if (attempt.status !== 'submitted' || !attempt.submittedAt) continue;
+        const k = dayKey(new Date(attempt.submittedAt));
+        entregasPorDia.set(k, (entregasPorDia.get(k) ?? 0) + 1);
+      }
+      const entregasSeries = [...entregasPorDia.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([data, entregas]) => ({ data, entregas }));
+
+      const examMedia = (examRows ?? [])
+        .filter((e) => attemptsByExam.get(e.id))
+        .map((e) => {
+          const acc = attemptsByExam.get(e.id)!;
+          const media = acc.answered > 0 ? Math.round((acc.correct / acc.answered) * 100) : 0;
+          return { id: e.id, titulo: e.title, turma: (e as any).turmas?.name ?? '—', media, entregas: acc.submitted };
+        })
+        .sort((a, b) => b.media - a.media);
+
+      const byUser = new Map<string, { name: string; correct: number; answered: number }>();
+      for (const attempt of attempts ?? []) {
+        if (attempt.status !== 'submitted') continue;
+        if (!byUser.has(attempt.userId)) byUser.set(attempt.userId, { name: '', correct: 0, answered: 0 });
+      }
+      const userNames = new Map<string, string>();
+      for (const attempt of attempts ?? []) {
+        if (!byUser.has(attempt.userId) || !attempt.userId) continue;
+        if (!userNames.has(attempt.userId)) {
+          const { data: u } = await supabase.from('users').select('name').eq('id', attempt.userId).single();
+          userNames.set(attempt.userId, u?.name ?? 'Aluno');
+        }
+        const acc = byUser.get(attempt.userId)!;
+        acc.name = userNames.get(attempt.userId) ?? acc.name;
+      }
+      for (const ans of allAnswers ?? []) {
+        const attempt = (attempts ?? []).find((a) => a.id === ans.attemptId);
+        if (!attempt || !byUser.has(attempt.userId) || ans.isCorrect === undefined || ans.isCorrect === null) continue;
+        const acc = byUser.get(attempt.userId)!;
+        acc.answered += 1;
+        if (ans.isCorrect) acc.correct += 1;
+      }
+      const topAlunos = [...byUser.values()]
+        .map((u) => ({ nome: u.name || 'Aluno', acertos: u.correct, respondidas: u.answered, media: u.answered > 0 ? Math.round((u.correct / u.answered) * 100) : 0 }))
+        .sort((a, b) => b.media - a.media)
+        .slice(0, 8);
+
+      return res.json({
+        totais: { turmas, questoes, professores: pResp.count ?? 0, alunos: aResp.count ?? 0, totalEntregas },
+        questoesPorStatus: [
+          { name: 'Pendentes', value: questaoCounts.pending },
+          { name: 'Aprovadas', value: questaoCounts.approved },
+          { name: 'Rejeitadas', value: questaoCounts.rejected },
+        ],
+        simulados: [{
+          name: 'Rascunho',
+          value: (examRows ?? []).filter((e) => e.status === 'draft').length,
+        }, {
+          name: 'Publicados',
+          value: (examRows ?? []).filter((e) => e.status === 'published').length,
+        }, {
+          name: 'Arquivados',
+          value: (examRows ?? []).filter((e) => e.status === 'archived').length,
+        }],
+        eficiencia: { totalAttempts, totalEntregas, totalAlunosVinculados },
+        entregasPorDia: entregasSeries,
+        mediaPorSimulado: examMedia,
+        topAlunos,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao carregar o painel geral' });
+    }
+  }
+
   // Início do professor: turmas, pendências de revisão, simulados recentes
   async professor(req: AuthRequest, res: Response) {
     try {

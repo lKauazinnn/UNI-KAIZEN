@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS "users" (
     "password" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'aluno',
     "organizationId" TEXT NOT NULL,
+    "isAdmin" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "resetPasswordToken" TEXT,
     "resetPasswordExpires" TIMESTAMP(3),

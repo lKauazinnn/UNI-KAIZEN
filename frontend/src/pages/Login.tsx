@@ -33,13 +33,13 @@ export default function Login() {
     <AuthShell
       footer={
         <>
-          Ainda nÃ£o tem conta? <AuthLink to="/register">Criar conta</AuthLink> Â·{' '}
+          Ainda não tem conta? <AuthLink to="/register">Criar conta</AuthLink> ·{' '}
           <AuthLink to="/reset-password">Esqueci a senha</AuthLink>
         </>
       }
     >
       <h2 className="text-xl font-bold text-slate-100 mb-1">Entrar</h2>
-      <p className="text-sm text-slate-400 mb-6">Acesse sua organizaÃ§Ã£o para continuar.</p>
+      <p className="text-sm text-slate-400 mb-6">Acesse sua organização para continuar.</p>
 
       {error && (
         <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3">
@@ -49,7 +49,7 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@escola.com" required autoFocus />
-        <Input label="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required />
+        <Input label="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
         <Button type="submit" className="w-full" loading={loading}>
           Entrar
         </Button>
