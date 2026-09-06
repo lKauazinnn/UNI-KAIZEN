@@ -156,16 +156,26 @@ export class ExamController {
         }
       }
 
+      // O aluno nunca pode receber o gabarito por esta rota (B21).
+      const questionFields = isProfessor
+        ? 'id, number, statement, alternatives, images, gabarito, gabaritoOrigin, gabaritoConfidence, catalogItemId, classificationSource, status'
+        : 'id, number, statement, alternatives, images';
+
       const { data: examQuestions, error: eqErr } = await supabase
         .from('exam_questions')
-        .select('id, "order", questions(*)')
+        .select(`id, "order", questions(${questionFields})`)
         .eq('examId', id)
         .order('order', { ascending: true });
       if (eqErr) return res.status(500).json({ error: 'Erro ao carregar questões' });
 
-      const hasAttempt = (exam.attempts ?? []).length > 0;
+      // hasAttempt é sobre o usuário logado, não sobre a turma inteira.
+      const allAttempts = (exam.attempts ?? []) as { userId: string }[];
+      const hasAttempt = allAttempts.some((a) => a.userId === req.userId);
+
+      // Aluno não enxerga as tentativas dos colegas.
+      const { attempts, ...examWithoutAttempts } = exam as Record<string, unknown>;
       return res.json({
-        ...exam,
+        ...(isProfessor ? exam : examWithoutAttempts),
         questions: examQuestions ?? [],
         hasAttempt,
       });
@@ -189,20 +199,31 @@ export class ExamController {
 
       const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
       if (parsed.title) updates.title = parsed.title;
-      if (parsed.turmaId) updates.turmaId = parsed.turmaId;
 
-      if (parsed.turmaId && parsed.turmaId !== undefined) {
+      if (parsed.turmaId) {
+        // Mesma validação do create: sem checar o professorId dava para mover
+        // o simulado para a turma de outro professor.
         const { data: turma } = await supabase
           .from('turmas')
-          .select('organizationId')
+          .select('organizationId, professorId')
           .eq('id', parsed.turmaId)
           .single();
         if (!turma || turma.organizationId !== req.organizationId) {
           return res.status(404).json({ error: 'Turma não encontrada' });
         }
+        if (req.userRole !== 'admin' && turma.professorId !== req.userId) {
+          return res.status(403).json({ error: 'Você não administra essa turma' });
+        }
+        updates.turmaId = parsed.turmaId;
       }
 
-      const { data: exam, error } = await supabase.from('exams').update(updates).eq('id', id).select().single();
+      const { data: exam, error } = await supabase
+        .from('exams')
+        .update(updates)
+        .eq('id', id)
+        .eq('organizationId', req.organizationId!)
+        .select()
+        .single();
       if (error || !exam) return res.status(500).json({ error: 'Erro ao atualizar simulado' });
 
       if (parsed.questionIds) {
@@ -280,13 +301,18 @@ export class ExamController {
   }
 
   private async assertOwner(req: AuthRequest, examId: string, res: Response): Promise<boolean> {
-    if (req.userRole === 'admin') return true;
     const { data: exam } = await supabase
       .from('exams')
       .select('organizationId, createdBy')
       .eq('id', examId)
       .single();
-    if (!exam || exam.organizationId !== req.organizationId || exam.createdBy !== req.userId) {
+    // A checagem de organização vale para TODOS, inclusive admin (B04).
+    if (!exam || exam.organizationId !== req.organizationId) {
+      res.status(404).json({ error: 'Simulado não encontrado' });
+      return false;
+    }
+    // O admin da organização pode administrar simulados de qualquer professor dela.
+    if (req.userRole !== 'admin' && exam.createdBy !== req.userId) {
       res.status(403).json({ error: 'Você não tem permissão nesse simulado' });
       return false;
     }

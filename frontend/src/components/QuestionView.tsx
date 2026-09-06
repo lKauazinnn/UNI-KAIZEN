@@ -1,71 +1,163 @@
 import { Question } from '../types';
 import { Badge } from './ui';
 
+/**
+ * Renderização ÚNICA da questão, usada tanto na conferência do professor
+ * quanto na tela em que o aluno responde.
+ *
+ * O backlog exige que "o professor confira a questão exatamente como o aluno
+ * verá" (B14) e que "o visual do professor corresponda ao visual do aluno"
+ * (B20). Antes existiam duas árvores de markup independentes, então qualquer
+ * ajuste numa tela não aparecia na outra. Aqui a diferença entre os dois modos
+ * é só interatividade e exibição do gabarito — a estrutura é a mesma.
+ */
 export function QuestionView({
   question,
   compact,
+  mode = 'review',
+  index,
+  selected,
+  onSelect,
 }: {
   question: Question;
   compact?: boolean;
+  /** 'review' = professor confere · 'exam' = aluno responde */
+  mode?: 'review' | 'exam';
+  /** Usado como número quando a questão não tem número próprio */
+  index?: number;
+  /** Letra marcada pelo aluno (modo 'exam') */
+  selected?: string | null;
+  /** Marca/desmarca a alternativa (modo 'exam') */
+  onSelect?: (letter: string | null) => void;
 }) {
+  const isExam = mode === 'exam';
   const gabarito = question.gabarito?.toUpperCase();
-  const whatsappTip = 'Os elementos visuais (imagens, gráficos, mapas) do PDF original são preservados como referência para validação manual.';
+  const numero = question.number ?? (index !== undefined ? index + 1 : undefined);
+
+  // A origem do gabarito é requisito explícito da tela de revisão: o professor
+  // precisa saber se a resposta veio do documento ou foi deduzida (B12).
+  const origem = question.gabaritoOrigin;
+  const origemLabel =
+    origem === 'document'
+      ? 'do documento'
+      : origem === 'heuristic'
+      ? 'deduzido — conferir'
+      : origem === 'professor'
+      ? 'definido por você'
+      : origem === 'ai'
+      ? 'sugerido por IA — conferir'
+      : null;
+  const origemTone = origem === 'document' || origem === 'professor' ? 'green' : 'amber';
+
+  const visuais = question.images ?? [];
+  const comUrl = visuais.filter((img) => img.url);
+  const semUrl = visuais.filter((img) => !img.url);
 
   return (
     <div className="space-y-4">
-      {(question.number || question.status || question.gabarito || question.catalogItemId) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {question.number && <Badge tone="neutral">Questão {question.number}</Badge>}
-          {question.status && (
-            <Badge tone={question.status === 'approved' ? 'green' : question.status === 'rejected' ? 'red' : 'amber'}>
-              {question.status === 'approved' ? 'Aprovada' : question.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
-            </Badge>
+      <div className="flex flex-wrap items-center gap-2">
+        {numero !== undefined && <Badge tone="neutral">Questão {numero}</Badge>}
+
+        {isExam
+          ? selected && <Badge tone="teal">Respondida: {selected}</Badge>
+          : (
+            <>
+              {question.status && (
+                <Badge tone={question.status === 'approved' ? 'green' : question.status === 'rejected' ? 'red' : 'amber'}>
+                  {question.status === 'approved' ? 'Aprovada' : question.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
+                </Badge>
+              )}
+              {question.gabarito ? (
+                <>
+                  <Badge tone="teal">Gabarito: {gabarito}</Badge>
+                  {origemLabel && <Badge tone={origemTone}>Gabarito {origemLabel}</Badge>}
+                </>
+              ) : (
+                <Badge tone="red">Sem gabarito</Badge>
+              )}
+              {question.catalogItemId && question.catalog_items?.name && (
+                <Badge tone="blue">{question.catalog_items.name}</Badge>
+              )}
+              {question.classificationSource === 'ai' && <Badge tone="neutral">Classificação por IA</Badge>}
+              {question.classificationSource === 'professor' && <Badge tone="neutral">Classificação do professor</Badge>}
+            </>
           )}
-          {question.gabarito && <Badge tone="teal">Gabarito: {gabarito}</Badge>}
-          {question.catalogItemId && question.catalog_items?.name && (
-            <Badge tone="blue">{question.catalog_items.name}</Badge>
-          )}
-          {question.classificationSource === 'ai' && <Badge tone="neutral">IA</Badge>}
-          {question.classificationSource === 'professor' && <Badge tone="neutral">Professor</Badge>}
-        </div>
-      )}
+      </div>
 
       <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">{question.statement}</div>
 
-      {question.images && question.images.length > 0 && (
-        question.images[0]?.url ? (
-          <div className="rounded-xl border border-[color:var(--border)] overflow-hidden">
-            <img src={question.images[0].url} alt={question.images[0].caption || 'Elemento visual da questão'} className="w-full h-auto" />
-            {question.images[0].caption && (
-              <p className="px-3 py-2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-800/60">{question.images[0].caption}</p>
-            )}
-          </div>
-        ) : (
+      {/* Todos os visuais, não só o primeiro — uma questão pode ter mapa + tabela. */}
+      {comUrl.map((img, i) => (
+        <div key={img.id ?? `url-${i}`} className="rounded-xl border border-[color:var(--border)] overflow-hidden">
+          <img
+            src={img.url}
+            alt={img.caption || 'Elemento visual da questão'}
+            className="w-full h-auto"
+          />
+          {img.caption && (
+            <p className="px-3 py-2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-800/60">{img.caption}</p>
+          )}
+        </div>
+      ))}
+
+      {semUrl.length > 0 && (
         <div className="rounded-xl border border-primary-500/20 bg-primary-500/5 p-4">
-          <p className="text-xs font-bold text-primary-300 uppercase tracking-wide mb-1">Referência visual preservada</p>
-          <p className="text-sm text-slate-300">{whatsappTip}</p>
-          <ul className="mt-2 space-y-1 text-sm text-slate-400">
-            {question.images.map((img, i) => (
-              <li key={img.id ?? i}>• {img.caption || img.type || 'Figura'}</li>
+          <p className="text-xs font-bold text-primary-300 uppercase tracking-wide mb-1">Referência visual do PDF</p>
+          <ul className="space-y-1 text-sm text-slate-400">
+            {semUrl.map((img, i) => (
+              <li key={img.id ?? `ref-${i}`}>• {img.caption || img.type || 'Figura'}</li>
             ))}
           </ul>
         </div>
-        )
       )}
 
       <div className={compact ? 'space-y-2' : 'space-y-2.5'}>
-        {question.alternatives.map((alt) => (
-          <div
-            key={alt.letter}
-            className="flex items-start gap-3 rounded-xl border border-[color:var(--border)] bg-white dark:bg-slate-900/40 px-4 py-3"
-          >
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-sm font-bold text-slate-600 dark:text-slate-300">
-              {alt.letter}
-            </span>
-            <span className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{alt.text}</span>
-          </div>
-        ))}
+        {question.alternatives.map((alt) => {
+          const isSelected = isExam && selected === alt.letter;
+          const conteudo = (
+            <>
+              <span
+                className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold transition ${
+                  isSelected
+                    ? 'bg-primary-500 border-primary-500 text-white'
+                    : 'border-slate-500 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {alt.letter}
+              </span>
+              <span className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{alt.text}</span>
+            </>
+          );
+
+          const base = 'w-full text-left flex items-start gap-3 rounded-xl border px-4 py-3 transition';
+
+          return isExam ? (
+            <button
+              key={alt.letter}
+              type="button"
+              onClick={() => onSelect?.(isSelected ? null : alt.letter)}
+              className={`${base} ${
+                isSelected ? 'border-primary-500/60 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'
+              }`}
+            >
+              {conteudo}
+            </button>
+          ) : (
+            <div
+              key={alt.letter}
+              className={`${base} border-[color:var(--border)] bg-white dark:bg-slate-900/40`}
+            >
+              {conteudo}
+            </div>
+          );
+        })}
       </div>
+
+      {question.alternatives.length === 0 && (
+        <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+          Nenhuma alternativa foi identificada nesta questão.
+        </p>
+      )}
     </div>
   );
 }

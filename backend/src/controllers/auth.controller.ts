@@ -70,7 +70,9 @@ const createToken = (user: { id: string; email: string; role: UserRole }) => {
   );
 };
 
-const findOrCreateOrganization = async (slug: string): Promise<string | null> => {
+const findOrCreateOrganization = async (
+  slug: string
+): Promise<{ id: string; created: boolean } | null> => {
   const cleanSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
   if (!cleanSlug) return null;
 
@@ -79,7 +81,7 @@ const findOrCreateOrganization = async (slug: string): Promise<string | null> =>
     .select('id')
     .eq('slug', cleanSlug)
     .maybeSingle();
-  if (existing) return existing.id;
+  if (existing) return { id: existing.id, created: false };
 
   const now = new Date().toISOString();
   const { data: created, error } = await supabase
@@ -91,7 +93,7 @@ const findOrCreateOrganization = async (slug: string): Promise<string | null> =>
     console.error('[org] erro ao criar organização:', JSON.stringify(error));
     return null;
   }
-  return created.id;
+  return { id: created.id, created: true };
 };
 
 export class AuthController {
@@ -108,13 +110,25 @@ export class AuthController {
         .maybeSingle();
       if (existingUser) return res.status(400).json({ error: 'Usuário já existe' });
 
-      const organizationId = await findOrCreateOrganization(parsed.organizationSlug);
-      if (!organizationId) {
+      const org = await findOrCreateOrganization(parsed.organizationSlug);
+      if (!org) {
         return res.status(500).json({ error: 'Não foi possível configurar a organização' });
       }
+      const organizationId = org.id;
 
+      // B03/B04: só o fundador da organização entra como professor. Quem se
+      // registra numa organização que já existe entra como aluno — professores
+      // adicionais são criados pelo admin. Sem isso, saber o slug bastaria para
+      // virar professor de qualquer instituição e ler todo o banco de questões.
       const shouldBeAdmin = isOwnerEmail(email);
-      const role: UserRole = shouldBeAdmin ? 'admin' : requestedRole;
+      let role: UserRole;
+      if (shouldBeAdmin) {
+        role = 'admin';
+      } else if (org.created) {
+        role = requestedRole;
+      } else {
+        role = 'aluno';
+      }
       const hashedPassword = await bcrypt.hash(parsed.password, 10);
       const now = new Date().toISOString();
 

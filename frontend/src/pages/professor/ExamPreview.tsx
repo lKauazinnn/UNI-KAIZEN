@@ -108,14 +108,11 @@ export default function ExamPreview() {
       )}
 
       <div className="space-y-4 pb-10">
-        {questions.map((eq) => (
+        {questions.map((eq, index) => (
           <Card key={eq.id} className="!p-5">
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              {(eq.questions as any)?.number && <Badge tone="neutral">Questão {(eq.questions as any).number}</Badge>}
-              <Badge tone="neutral">Ordem {eq.order}</Badge>
-              {(eq.questions as any)?.gabarito && <Badge tone="teal">Gabarito: {(eq.questions as any).gabarito.toUpperCase()}</Badge>}
-            </div>
-            <QuestionView question={eq.questions as any} compact />
+            {/* B20: a pré-visualização é a experiência do ALUNO. O gabarito não
+                aparece aqui — ele é conferido na tela de revisão da questão. */}
+            <QuestionView question={eq.questions as any} mode="exam" index={index} compact />
           </Card>
         ))}
       </div>

@@ -15,22 +15,45 @@ const updateSchema = z.object({
 const classificateSchema = z.object({ catalogItemId: z.string() });
 
 export class QuestionController {
-  // Lista em lote: ?status=pending|approved|rejected|all  (B18 banco de questões)
+  // Lista em lote: ?status=pending|approved|rejected|all&q=&catalogItemId=&page=&pageSize=  (B18 banco de questões)
   async list(req: AuthRequest, res: Response) {
     try {
       const status = req.query.status as string | undefined;
       const importJobId = req.query.importJobId as string | undefined;
+      const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const catalogItemId = req.query.catalogItemId as string | undefined;
+
+      // Compatibilidade: sem page/pageSize a rota continua devolvendo o array puro.
+      const paginated = req.query.page !== undefined || req.query.pageSize !== undefined;
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const rawPageSize = Number(req.query.pageSize) || 50;
+      const pageSize = Math.min(100, Math.max(1, rawPageSize));
+
       let query = supabase
         .from('questions')
-        .select('*, catalog_items(id, name, level)')
+        .select('*, catalog_items(id, name, level)', { count: 'exact' })
         .eq('organizationId', req.organizationId!);
 
       if (status && status !== 'all') query = query.eq('status', status);
       if (importJobId) query = query.eq('importJobId', importJobId);
+      if (catalogItemId) query = query.eq('catalogItemId', catalogItemId);
+      if (search) query = query.ilike('statement', '%' + search + '%');
 
-      const { data, error } = await query.order('createdAt', { ascending: false }).limit(500);
+      query = query.order('createdAt', { ascending: false });
+
+      if (paginated) {
+        const from = (page - 1) * pageSize;
+        query = query.range(from, from + pageSize - 1);
+      } else {
+        query = query.limit(500);
+      }
+
+      const { data, error, count } = await query;
       if (error) return res.status(500).json({ error: 'Erro ao listar questões' });
-      return res.json(data ?? []);
+
+      const items = data ?? [];
+      if (!paginated) return res.json(items);
+      return res.json({ items, page, pageSize, total: count ?? items.length });
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: 'Erro ao listar questões' });
@@ -111,6 +134,21 @@ export class QuestionController {
         return res.status(404).json({ error: 'Questão não encontrada' });
       }
 
+      // O banco tem ON DELETE CASCADE em exam_questions/answers: apagar uma questão
+      // já usada apagaria respostas de alunos e mudaria notas entregues. Bloqueia (409).
+      const { data: links, error: linkError } = await supabase
+        .from('exam_questions')
+        .select('examId')
+        .eq('questionId', id);
+      if (linkError) return res.status(500).json({ error: 'Erro ao excluir questão' });
+      if ((links ?? []).length > 0) {
+        return res.status(409).json({
+          error:
+            'Esta questão está sendo usada em um simulado e não pode ser excluída. Remova-a do simulado antes de excluir.',
+          examIds: (links ?? []).map((l) => l.examId),
+        });
+      }
+
       const { error } = await supabase.from('questions').delete().eq('id', id);
       if (error) return res.status(500).json({ error: 'Erro ao excluir questão' });
 
@@ -158,7 +196,7 @@ export class QuestionController {
       const { importJobId } = req.query;
       let query = supabase
         .from('questions')
-        .select('id, status')
+        .select('id, number, status')
         .eq('organizationId', req.organizationId!)
         .eq('status', 'pending');
       if (importJobId) query = query.eq('importJobId', String(importJobId));
@@ -167,7 +205,8 @@ export class QuestionController {
       if (error) return res.status(500).json({ error: 'Erro ao listar questões' });
 
       const approved: string[] = [];
-      const rejected: { id: string; reason: string }[] = [];
+      // A UI lista os motivos por questão: { id, number, reason }.
+      const rejected: { id: string; number: number | null; reason: string }[] = [];
 
       for (const q of pending ?? []) {
         const validity = await this.validateQuestion(q.id, req.organizationId!);
@@ -182,7 +221,7 @@ export class QuestionController {
             .from('questions')
             .update({ status: 'rejected', rejectionReason: validity.reason, updatedAt: new Date().toISOString() })
             .eq('id', q.id);
-          rejected.push({ id: q.id, reason: validity.reason ?? 'Inválida' });
+          rejected.push({ id: q.id, number: q.number ?? null, reason: validity.reason ?? 'Inválida' });
         }
       }
 
@@ -216,13 +255,15 @@ export class QuestionController {
         return res.status(400).json({ error: 'Item de catálogo inválido' });
       }
 
+      // O filtro por organizationId no update impede escrita cross-tenant (B04).
       const { data, error } = await supabase
         .from('questions')
         .update({ catalogItemId, classificationSource: 'professor', updatedAt: new Date().toISOString() })
         .eq('id', id)
+        .eq('organizationId', req.organizationId!)
         .select()
         .single();
-      if (error || !data) return res.status(500).json({ error: 'Erro ao classificar questão' });
+      if (error || !data) return res.status(404).json({ error: 'Questão não encontrada' });
       return res.json(data);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors[0].message });
@@ -235,7 +276,7 @@ export class QuestionController {
   private async validateQuestion(id: string, orgId: string): Promise<{ valid: boolean; reason?: string }> {
     const { data: q } = await supabase
       .from('questions')
-      .select('statement, alternatives')
+      .select('statement, alternatives, gabarito')
       .eq('id', id)
       .eq('organizationId', orgId)
       .single();
@@ -243,6 +284,24 @@ export class QuestionController {
     const alts = Array.isArray(q.alternatives) ? q.alternatives : [];
     if (!q.statement || q.statement.trim().length < 5) return { valid: false, reason: 'Enunciado ausente ou muito curto' };
     if (alts.filter((a: any) => a?.text?.trim()).length < 2) return { valid: false, reason: 'Menos de 2 alternativas válidas' };
+
+    // Letras das alternativas normalizadas (A, B, C...)
+    const letters = alts
+      .map((a: any) => String(a?.letter ?? '').trim().toUpperCase())
+      .filter((l: string) => l.length > 0);
+
+    // Letras duplicadas tornam a correção ambígua.
+    if (new Set(letters).size !== letters.length) {
+      return { valid: false, reason: 'Alternativas com letras duplicadas' };
+    }
+
+    // Sem gabarito a questão entraria no simulado e todos os alunos errariam.
+    const gabarito = typeof q.gabarito === 'string' ? q.gabarito.trim().toUpperCase() : '';
+    if (!gabarito) return { valid: false, reason: 'Sem gabarito definido' };
+    if (!letters.includes(gabarito)) {
+      return { valid: false, reason: 'Gabarito não corresponde a nenhuma alternativa' };
+    }
+
     return { valid: true };
   }
 }

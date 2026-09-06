@@ -178,11 +178,13 @@ export class ClassController {
       const ok = await this.assertOwnership(req, id, res);
       if (!ok) return;
 
-      // Aluno já existe?
+      // Aluno já existe NA MESMA organização? (B04: sem o filtro dava para
+      // vincular aluno de outra instituição e enumerar emails globalmente)
       let { data: student } = await supabase
         .from('users')
         .select('id, name, email, role')
         .eq('email', normalized)
+        .eq('organizationId', req.organizationId!)
         .maybeSingle();
 
       if (student && student.role === 'aluno') {
@@ -227,7 +229,8 @@ export class ClassController {
       }
 
       await this.addMember(req, id, created.id, 'ativo');
-      await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'create', entityType: 'user', entityId: created.id, details: { via: 'link', tempPassword } });
+      // NUNCA gravar a senha em claro no log — a auditoria é legível por professores.
+      await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'create', entityType: 'user', entityId: created.id, details: { via: 'link', email } });
       return res.status(201).json({ student: created, tempPassword });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors[0].message });
@@ -256,10 +259,12 @@ export class ClassController {
         }
         const name = nameParts.join(' ') || email.split('@')[0];
 
+        // Busca restrita à organização do professor (B04).
         let { data: existing } = await supabase
           .from('users')
           .select('id, role')
           .eq('email', email)
+          .eq('organizationId', req.organizationId!)
           .maybeSingle();
 
         if (existing && existing.role !== 'aluno') {
@@ -422,13 +427,18 @@ export class ClassController {
 
   // ─── Helpers ────────────────────────────────────────────────────────
   private async assertOwnership(req: AuthRequest, turmaId: string, res: Response): Promise<boolean> {
-    if (req.userRole === 'admin') return true;
     const { data: turma } = await supabase
       .from('turmas')
       .select('professorId, organizationId')
       .eq('id', turmaId)
       .single();
-    if (!turma || turma.organizationId !== req.organizationId || turma.professorId !== req.userId) {
+    // A checagem de organização vale para TODOS, inclusive admin (B04).
+    if (!turma || turma.organizationId !== req.organizationId) {
+      res.status(404).json({ error: 'Turma não encontrada' });
+      return false;
+    }
+    // O admin da organização pode administrar turmas de qualquer professor dela.
+    if (req.userRole !== 'admin' && turma.professorId !== req.userId) {
       res.status(403).json({ error: 'Você não tem permissão nessa turma' });
       return false;
     }

@@ -18,7 +18,7 @@ export class AttemptController {
   // Inicia (ou retoma) a tentativa do aluno em um simulado
   async start(req: AuthRequest, res: Response) {
     try {
-      const { examId } = req.params;
+      const { id: examId } = req.params;
 
       const { data: exam } = await supabase
         .from('exams')
@@ -77,7 +77,7 @@ export class AttemptController {
   // Dados para a tela de resposta com o estado atual (se houver respostas salvas)
   async current(req: AuthRequest, res: Response) {
     try {
-      const { examId } = req.params;
+      const { id: examId } = req.params;
 
       const { data: exam, error: examError } = await supabase
         .from('exams')
@@ -142,16 +142,29 @@ export class AttemptController {
   // Salva respostas em andamento (upsert)
   async saveAnswers(req: AuthRequest, res: Response) {
     try {
-      const { attemptId } = req.params;
+      const { id: attemptId } = req.params;
       const { answers } = saveAnswersSchema.parse(req.body);
 
       const { data: attempt } = await supabase
         .from('attempts')
-        .select('userId, status')
+        .select('userId, status, examId')
         .eq('id', attemptId)
         .single();
       if (!attempt || attempt.userId !== req.userId) return res.status(403).json({ error: 'Tentativa não pertence a você' });
       if (attempt.status !== 'in_progress') return res.status(400).json({ error: 'Tentativa já finalizada' });
+
+      // Só aceita respostas para questões que realmente estão neste simulado.
+      // Sem isso, o aluno podia gravar respostas para qualquer questão da base.
+      const { data: examQuestions } = await supabase
+        .from('exam_questions')
+        .select('questionId')
+        .eq('examId', attempt.examId);
+      const allowedQuestionIds = new Set((examQuestions ?? []).map((eq) => eq.questionId));
+
+      const invalid = answers.filter((a) => !allowedQuestionIds.has(a.questionId));
+      if (invalid.length > 0) {
+        return res.status(400).json({ error: 'Uma ou mais questões não pertencem a este simulado' });
+      }
 
       for (const answer of answers) {
         const { data: existing } = await supabase
@@ -193,7 +206,7 @@ export class AttemptController {
   // Finaliza a tentativa e corrige automaticamente (B24)
   async submit(req: AuthRequest, res: Response) {
     try {
-      const { attemptId } = req.params;
+      const { id: attemptId } = req.params;
 
       const { data: attempt } = await supabase
         .from('attempts')
@@ -203,7 +216,26 @@ export class AttemptController {
       if (!attempt || attempt.userId !== req.userId) return res.status(403).json({ error: 'Tentativa não pertence a você' });
       if (attempt.status === 'submitted') return res.status(400).json({ error: 'Tentativa já finalizada' });
 
-      // Corrige cada resposta comparando com o gabarito
+      // B23 — fecha a tentativa ANTES de corrigir, de forma atômica.
+      //
+      // Corrigir primeiro e só depois mudar o status abria uma janela em que um
+      // autosave concorrente ainda passava na checagem de 'in_progress' e
+      // sobrescrevia `selected` sem recalcular `isCorrect` — o resultado ficava
+      // permanentemente inconsistente ("sua resposta: B / gabarito: C / correta").
+      // O filtro por status também garante que dois submits simultâneos não
+      // corrijam a mesma tentativa duas vezes.
+      const submittedAt = new Date().toISOString();
+      const { data: submitted, error: subError } = await supabase
+        .from('attempts')
+        .update({ status: 'submitted', submittedAt, updatedAt: submittedAt })
+        .eq('id', attemptId)
+        .eq('status', 'in_progress')
+        .select()
+        .maybeSingle();
+      if (subError) return res.status(500).json({ error: 'Erro ao finalizar tentativa' });
+      if (!submitted) return res.status(400).json({ error: 'Tentativa já finalizada' });
+
+      // A partir daqui a tentativa está fechada: nenhuma resposta pode mudar.
       const { data: examQuestions } = await supabase
         .from('exam_questions')
         .select('questions(id, gabarito)')
@@ -221,6 +253,8 @@ export class AttemptController {
         .eq('attemptId', attemptId);
       if (aErr) return res.status(500).json({ error: 'Erro ao ler respostas' });
 
+      // Questões sem gabarito não entram no total: contá-las como erro faria a
+      // turma inteira perder ponto por uma falha de importação (B24).
       let correctCount = 0;
       for (const answer of answers ?? []) {
         const gabarito = gabaritoByQuestion.get(answer.questionId);
@@ -230,22 +264,14 @@ export class AttemptController {
           answer.selected.toUpperCase() === gabarito.toUpperCase();
         if (isCorrect) correctCount += 1;
 
-        await supabase
+        const { error: updErr } = await supabase
           .from('answers')
           .update({ isCorrect, updatedAt: new Date().toISOString() })
           .eq('id', answer.id);
+        if (updErr) console.error('[submit] erro ao gravar correção:', JSON.stringify(updErr));
       }
 
-      const total = (examQuestions ?? []).length;
-      const submittedAt = new Date().toISOString();
-
-      const { data: submitted, error: subError } = await supabase
-        .from('attempts')
-        .update({ status: 'submitted', submittedAt, updatedAt: submittedAt })
-        .eq('id', attemptId)
-        .select()
-        .single();
-      if (subError || !submitted) return res.status(500).json({ error: 'Erro ao finalizar tentativa' });
+      const total = [...gabaritoByQuestion.values()].filter((g) => g != null).length;
 
       await logAudit({
         organizationId: req.organizationId!,

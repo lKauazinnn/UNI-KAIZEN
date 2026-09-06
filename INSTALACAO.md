@@ -85,8 +85,26 @@ O teste usa o UUID **`e2e-`** no slug de organizações e telefones, criando dad
 
 ## Deploy (Vercel)
 
-O backend inclui `backend/vercel.json` apontando o runtime Node 20 e o caminho `/_/backend/api`. Na Vercel:
+São **dois projetos** na Vercel, cada um com seu `vercel.json`:
 
-1. Defina as mesmas variáveis de ambiente do `backend/.env` no projeto.
-2. Adicione `backend` como um segundo projeto/função (a API fica acessível em `/_/backend/api`).
-3. No frontend (produção), o `baseURL` usa automaticamente `/_/backend/api`.
+**Backend** — `backend/vercel.json` usa o builder `@vercel/node` sobre `src/server.ts`
+e encaminha todas as rotas para ele.
+
+1. Crie um projeto apontando para a pasta `backend`.
+2. Defina as mesmas variáveis de ambiente do `backend/.env` no projeto.
+3. Defina `NODE_ENV=production` — isso desativa o endpoint `/debug`.
+
+**Frontend** — `frontend/vercel.json` define o build Vite e o rewrite de SPA
+(`/(.*) → /index.html`). Sem esse rewrite, recarregar a página em qualquer rota
+interna (ex.: `/professor/resultados`) devolve 404.
+
+1. Crie um projeto apontando para a pasta `frontend`.
+2. Defina `VITE_API_URL` com a URL pública do backend (ex.: `https://kaizen-api.vercel.app/api`).
+   Em desenvolvimento a variável fica **vazia** e o Vite faz proxy de `/api` para `localhost:3333`.
+3. Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+
+> **Atenção — importação de PDF em produção.** O processamento do PDF é síncrono
+> (renderiza as páginas e chama a IA questão a questão dentro do request). Em
+> funções serverless isso estoura o tempo limite em provas grandes. Para o piloto,
+> aumente `maxDuration` na função do backend ou rode a API num host de processo
+> longo (Railway, Render, Fly).

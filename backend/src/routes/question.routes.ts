@@ -6,8 +6,9 @@ import { requireProfessorOrAdmin } from '../middlewares/role.middleware';
 const router = Router();
 const controller = new QuestionController();
 
-router.get('/', authMiddleware, (req, res) => controller.list(req, res));
-router.get('/:id', authMiddleware, (req, res) => controller.getById(req, res));
+// Banco de questões expõe o gabarito: nunca liberar para aluno.
+router.get('/', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.list(req, res));
+router.get('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.getById(req, res));
 router.patch('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.update(req, res));
 router.delete('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.remove(req, res));
 router.post('/:id/approve', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.approve(req, res));

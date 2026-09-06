@@ -158,8 +158,21 @@ async function main() {
   const q1 = importResult.questions.find((q: any) => q.number === 1);
   const q2 = importResult.questions.find((q: any) => q.number === 2);
   assert(q1?.alternatives?.length === 5, 'Alternativas extraídas da questão 1 (B10)');
-  assert(q2?.gabarito === 'B' || q2?.gabarito === undefined, 'Gabarito lido do documento (B12)');
-  assert(Array.isArray(q1?.images) || Array.isArray(q2?.images), 'Estrutura de elementos visuais preservada (B11)');
+
+  // Estes asserts eram vazios: aceitavam `undefined` e `Array.isArray`, então
+  // passavam mesmo com a extração totalmente quebrada. Agora exigem o valor.
+  assert(q2?.gabarito === 'B', `Gabarito lido do documento (B12) — recebido: ${q2?.gabarito}`);
+  assert(
+    q2?.gabaritoOrigin === 'document',
+    `Origem do gabarito registrada como 'document' (B12) — recebido: ${q2?.gabaritoOrigin}`
+  );
+  // Um gabarito deduzido por heurística JAMAIS pode ser rotulado como 'document'.
+  const rotulados = importResult.questions.filter((q: any) => q.gabaritoOrigin === 'document');
+  assert(
+    rotulados.every((q: any) => typeof q.gabarito === 'string' && q.gabarito.length === 1),
+    'Nenhum gabarito inventado rotulado como do documento (B12)'
+  );
+  assert(Array.isArray(q1?.images) && Array.isArray(q2?.images), 'Estrutura de elementos visuais preservada (B11)');
 
   const approveAll = await fetch(`${BASE}/questions/approve-valid`, {
     method: 'POST',
@@ -238,6 +251,43 @@ async function main() {
   console.log('\n── Isolamento por organização (B04) ──');
   const foraAcessoTurma = await fetch(`${BASE}/classes/${turma.id}`, { headers: authHeaders(foraData.token) });
   assert(foraAcessoTurma.status === 404 || foraAcessoTurma.status === 403, 'Usuário de outra organização não acessa a turma');
+
+  const foraAcessoSimulado = await fetch(`${BASE}/exams/${exam.id}`, { headers: authHeaders(foraData.token) });
+  assert(foraAcessoSimulado.status === 404 || foraAcessoSimulado.status === 403, 'Usuário de outra organização não acessa o simulado');
+
+  console.log('\n── Segurança: aluno não acessa gabarito nem auditoria ──');
+
+  // O banco de questões expõe o gabarito: aluno não pode listar.
+  const alunoQuestoes = await fetch(`${BASE}/questions?status=approved`, { headers: authHeaders(alunoData.token) });
+  assert(alunoQuestoes.status === 403, `Aluno não lista o banco de questões (recebido ${alunoQuestoes.status})`);
+
+  const alunoQuestao = await fetch(`${BASE}/questions/${bankData[0].id}`, { headers: authHeaders(alunoData.token) });
+  assert(alunoQuestao.status === 403, `Aluno não abre questão avulsa com gabarito (recebido ${alunoQuestao.status})`);
+
+  // Mesmo sendo da turma, o aluno não pode receber o gabarito pelo simulado.
+  const alunoExam = await fetch(`${BASE}/exams/${exam.id}`, { headers: authHeaders(alunoData.token) });
+  const alunoExamData = await asJson(alunoExam);
+  const vazouGabarito = (alunoExamData.questions ?? []).some(
+    (eq: any) => eq.questions && 'gabarito' in eq.questions
+  );
+  assert(!vazouGabarito, 'Simulado não entrega gabarito ao aluno (B21)');
+  assert(
+    !Array.isArray(alunoExamData.attempts),
+    'Simulado não entrega ao aluno as tentativas dos colegas (B21)'
+  );
+
+  const alunoAudit = await fetch(`${BASE}/audit`, { headers: authHeaders(alunoData.token) });
+  assert(alunoAudit.status === 403, `Aluno não lê o log de auditoria (recebido ${alunoAudit.status})`);
+
+  const alunoDashboard = await fetch(`${BASE}/dashboard/geral`, { headers: authHeaders(alunoData.token) });
+  assert(alunoDashboard.status === 403, `Aluno não lê o painel geral (recebido ${alunoDashboard.status})`);
+
+  // Reenvio de tentativa já finalizada não pode recorrigir nem duplicar (B23).
+  const resubmit = await fetch(`${BASE}/attempts/${attempt.id}/submit`, {
+    method: 'POST',
+    headers: authHeaders(alunoData.token),
+  });
+  assert(resubmit.status === 400, `Tentativa já finalizada não aceita novo envio (recebido ${resubmit.status})`);
 
   console.log(`\n${passed} passaram, ${failed} falharam.`);
   process.exit(failed > 0 ? 1 : 0);

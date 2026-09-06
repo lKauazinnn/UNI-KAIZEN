@@ -75,7 +75,8 @@ export interface Question {
   alternatives: Alternative[];
   images?: QuestionImage[];
   gabarito?: string | null;
-  gabaritoOrigin?: 'document' | 'ai' | 'professor' | null;
+  // 'heuristic' = deduzido pelo extrator, precisa de conferência humana (B12)
+  gabaritoOrigin?: 'document' | 'heuristic' | 'ai' | 'professor' | null;
   gabaritoConfidence?: number | null;
   catalogItemId?: string | null;
   classificationSource?: 'ai' | 'professor' | null;

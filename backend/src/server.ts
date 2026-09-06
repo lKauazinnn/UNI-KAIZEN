@@ -45,19 +45,20 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
 
-app.get('/debug', async (req, res) => {
-  const supabase = (await import('./lib/supabase')).default;
-  const { data, error } = await supabase.from('users').select('count').limit(1);
-  res.json({
-    data,
-    error,
-    url: process.env.SUPABASE_URL,
-    hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY,
-    hasAi: Boolean(process.env.GROQ_API_KEY),
-    nodeEnv: process.env.NODE_ENV,
-    frontendUrl: process.env.FRONTEND_URL,
+// Diagnóstico de ambiente — só fora de produção, e sem expor URLs/segredos.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/debug', async (req, res) => {
+    const supabase = (await import('./lib/supabase')).default;
+    const { error } = await supabase.from('users').select('count').limit(1);
+    res.json({
+      dbReachable: !error,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY,
+      hasAnonKey: !!process.env.SUPABASE_ANON_KEY,
+      hasAi: Boolean(process.env.GROQ_API_KEY),
+      nodeEnv: process.env.NODE_ENV ?? 'development',
+    });
   });
-});
+}
 
 // Tratamento de erro central
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {

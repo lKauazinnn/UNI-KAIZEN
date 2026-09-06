@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, Send, Timer } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { TakeData, TakeQuestion } from '../../types';
 import { PageHeader, Button, Badge, Spinner, ConfirmDialog } from '../../components/ui';
+import { QuestionView } from '../../components/QuestionView';
 
 export default function TakeExam() {
   const { id } = useParams();
@@ -17,6 +18,8 @@ export default function TakeExam() {
   const [error, setError] = useState('');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const timerRef = useRef<number | null>(null);
+  const autosaveRef = useRef<number | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!id) return;
@@ -48,6 +51,8 @@ export default function TakeExam() {
   useEffect(() => {
     if (!data?.attempt) return;
     const interval = window.setInterval(async () => {
+      // Não salvar em cima de um envio em andamento (B23).
+      if (submittingRef.current) return;
       const entries = Object.entries(answers).filter(([, v]) => v !== null);
       if (entries.length === 0) return;
       setSaving(true);
@@ -64,6 +69,7 @@ export default function TakeExam() {
         setSaving(false);
       }
     }, 60000);
+    autosaveRef.current = interval;
     return () => window.clearInterval(interval);
   }, [data, answers]);
 
@@ -90,7 +96,14 @@ export default function TakeExam() {
   };
 
   const submit = async () => {
-    if (!data?.attempt) return;
+    if (!data?.attempt || submittingRef.current) return;
+    // Encerra o autosave antes de enviar: um tick durante o submit corromperia
+    // o resultado (resposta gravada sem recálculo da correção).
+    submittingRef.current = true;
+    if (autosaveRef.current !== null) {
+      window.clearInterval(autosaveRef.current);
+      autosaveRef.current = null;
+    }
     setSaving(true);
     try {
       await saveNow();
@@ -133,50 +146,14 @@ export default function TakeExam() {
       <div className="space-y-5">
         {data.questions.map((q, index) => (
           <div key={q.id} className="rounded-2xl bg-[color:var(--bg-card)] border border-[color:var(--border)] p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Badge tone="neutral">Questão {q.number ?? index + 1}</Badge>
-              {answers[q.id] && <Badge tone="teal">Respondida: {answers[q.id]}</Badge>}
-            </div>
-            <p className="text-slate-100 leading-relaxed whitespace-pre-wrap mb-4">{q.statement}</p>
-            {q.images && q.images.length > 0 && (
-              q.images[0]?.url ? (
-                <div className="mb-4 rounded-xl border border-[color:var(--border)] overflow-hidden">
-                  <img src={q.images[0].url} alt={q.images[0].caption || 'Elemento visual da questão'} className="w-full h-auto" />
-                  {q.images[0].caption && (
-                    <p className="px-3 py-2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-800/60">{q.images[0].caption}</p>
-                  )}
-                </div>
-              ) : (
-              <div className="mb-4 rounded-xl border border-primary-500/20 bg-primary-500/5 p-3">
-                <p className="text-xs text-slate-400">{q.images.map((i) => i.caption || i.type || 'Figura').join(' · ')}</p>
-              </div>
-              )
-            )}
-            <div className="space-y-2.5">
-              {q.alternatives.map((alt) => {
-                const isSelected = answers[q.id] === alt.letter;
-                return (
-                  <button
-                    key={alt.letter}
-                    onClick={() => select(q.id, isSelected ? null : alt.letter)}
-                    className={`w-full text-left flex items-start gap-3 rounded-xl border px-4 py-3 transition ${
-                      isSelected
-                        ? 'border-primary-500/60 bg-primary-500/10'
-                        : 'border-[color:var(--border)] hover:border-slate-500'
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold transition ${
-                        isSelected ? 'bg-primary-500 border-primary-500 text-white' : 'border-slate-500 text-slate-300'
-                      }`}
-                    >
-                      {alt.letter}
-                    </span>
-                    <span className="text-sm text-slate-200 leading-relaxed">{alt.text}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {/* Mesmo componente da conferência do professor (B14/B20) */}
+            <QuestionView
+              question={q as any}
+              mode="exam"
+              index={index}
+              selected={answers[q.id] ?? null}
+              onSelect={(letter) => select(q.id, letter)}
+            />
           </div>
         ))}
       </div>

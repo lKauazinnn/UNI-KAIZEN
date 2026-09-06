@@ -6,7 +6,7 @@ import {
 import { Users, FileQuestion, ClipboardList, GraduationCap, Send, School } from 'lucide-react';
 import { api } from '../../services/api';
 import { GeralDashboard } from '../../types';
-import { PageHeader, Card, Spinner, EmptyState, ProgressBar } from '../../components/ui';
+import { PageHeader, Card, Spinner, EmptyState } from '../../components/ui';
 
 const COLORS: Record<string, string> = {
   Pendentes: '#fbbf24',
@@ -38,7 +38,9 @@ export default function AdminDashboard() {
   if (loading) return <Spinner label="Carregando painel geral..." />;
   if (!data) return <EmptyState title="Painel indisponível" />;
 
-  const { totais, questoesPorStatus, simulados, entregasPorDia, mediaPorSimulado, topAlunos, eficiencia } = data;
+  // Ranking de alunos (gamificação) está fora do escopo do primeiro MVP:
+  // `topAlunos` continua vindo da API, mas não é exibido aqui.
+  const { totais, questoesPorStatus, simulados, entregasPorDia, mediaPorSimulado, eficiencia } = data;
   const rotulados = entregasPorDia.map((d) => ({
     ...d,
     dia: d.data ? new Date(d.data.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
@@ -132,7 +134,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid gap-6">
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-slate-100">Média de acerto por simulado</h2>
@@ -155,33 +157,6 @@ export default function AdminDashboard() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <h2 className="font-bold text-slate-100 mb-4">Top alunos por média</h2>
-          {topAlunos.length === 0 ? (
-            <EmptyState title="Sem dados de desempenho" description="Os melhores desempenhos aparecem aqui conforme os simulados são entregues." />
-          ) : (
-            <div className="space-y-3">
-              {topAlunos.map((a, i) => (
-                <div key={a.nome + i} className="rounded-xl border border-[color:var(--border)] p-4">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${i === 0 ? 'bg-amber-500/20 text-amber-300' : i === 1 ? 'bg-slate-400/20 text-slate-300' : i === 2 ? 'bg-orange-500/20 text-orange-300' : 'bg-slate-700/40 text-slate-400'}`}>
-                        {i + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-200 truncate">{a.nome}</p>
-                        <p className="text-xs text-slate-500">{a.acertos} acertos em {a.respondidas} respondidas</p>
-                      </div>
-                    </div>
-                    <span className="text-lg font-bold text-primary-300 shrink-0">{a.media}%</span>
-                  </div>
-                  <ProgressBar percent={a.media} />
-                </div>
-              ))}
             </div>
           )}
         </Card>

@@ -249,3 +249,55 @@ CREATE INDEX IF NOT EXISTS "questions_status_idx" ON "questions"("status");
 CREATE INDEX IF NOT EXISTS "exams_turmaId_idx" ON "exams"("turmaId");
 CREATE INDEX IF NOT EXISTS "attempts_examId_idx" ON "attempts"("examId");
 CREATE INDEX IF NOT EXISTS "audit_logs_organizationId_idx" ON "audit_logs"("organizationId");
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Row Level Security (B04 — isolamento por organização)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- O backend opera com a chave `service_role`, que por definição IGNORA RLS.
+-- Habilitar RLS aqui não substitui os filtros por organizationId na aplicação
+-- — serve como rede de segurança para qualquer outro caminho de acesso:
+-- a chave anon/publishable usada pelo frontend, o SQL Editor com papel
+-- autenticado, integrações futuras e chaves vazadas de menor privilégio.
+--
+-- Sem nenhuma policy criada, habilitar RLS NEGA todo acesso a quem não é
+-- service_role — que é exatamente o padrão seguro que queremos por ora.
+
+ALTER TABLE "organizations"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "users"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "turmas"         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "turma_members"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "catalog_items"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "import_jobs"    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "questions"      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "exams"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "exam_questions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "attempts"       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "answers"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "notices"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "audit_logs"     ENABLE ROW LEVEL SECURITY;
+
+-- Restrições de integridade da máquina de estados.
+-- Antes existiam só em JavaScript: um UPDATE manual podia deixar a tentativa
+-- num estado que a aplicação não sabe tratar.
+ALTER TABLE "questions" DROP CONSTRAINT IF EXISTS "questions_status_check";
+ALTER TABLE "questions" ADD CONSTRAINT "questions_status_check"
+    CHECK ("status" IN ('pending', 'approved', 'rejected'));
+
+ALTER TABLE "exams" DROP CONSTRAINT IF EXISTS "exams_status_check";
+ALTER TABLE "exams" ADD CONSTRAINT "exams_status_check"
+    CHECK ("status" IN ('draft', 'published', 'archived'));
+
+ALTER TABLE "attempts" DROP CONSTRAINT IF EXISTS "attempts_status_check";
+ALTER TABLE "attempts" ADD CONSTRAINT "attempts_status_check"
+    CHECK ("status" IN ('in_progress', 'submitted'));
+
+-- Tentativa entregue tem de ter data de entrega.
+ALTER TABLE "attempts" DROP CONSTRAINT IF EXISTS "attempts_submitted_has_date";
+ALTER TABLE "attempts" ADD CONSTRAINT "attempts_submitted_has_date"
+    CHECK ("status" <> 'submitted' OR "submittedAt" IS NOT NULL);
+
+-- Origem do gabarito: 'heuristic' = deduzido pelo extrator, exige conferência.
+ALTER TABLE "questions" DROP CONSTRAINT IF EXISTS "questions_gabarito_origin_check";
+ALTER TABLE "questions" ADD CONSTRAINT "questions_gabarito_origin_check"
+    CHECK ("gabaritoOrigin" IS NULL OR "gabaritoOrigin" IN ('document', 'heuristic', 'ai', 'professor'));

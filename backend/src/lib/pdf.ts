@@ -12,12 +12,22 @@ export interface ExtractedImage {
   page?: number;
 }
 
+/**
+ * Procedência do gabarito. O backlog é explícito: o gabarito não pode ser
+ * inventado silenciosamente, e a origem tem de ficar registrada (B12).
+ *  - 'document'  → lido da tabela de gabarito do próprio PDF (confiável)
+ *  - 'heuristic' → deduzido por heurística do texto (SUSPEITO, exige conferência)
+ */
+export type GabaritoOrigin = 'document' | 'heuristic';
+
 export interface ExtractedQuestion {
   number?: number;
   statement: string;
   alternatives: ExtractedAlternative[];
   images: ExtractedImage[];
   gabarito?: string;
+  gabaritoOrigin?: GabaritoOrigin;
+  gabaritoConfidence?: number;
 }
 
 export interface ExtractionResult {
@@ -87,12 +97,40 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
     let statement = withoutAlternatives.trim();
     const images = extractVisualReferences(statement);
 
+    // B12 — o gabarito da tabela do documento SEMPRE tem prioridade sobre a
+    // heurística. A heurística é um palpite e é marcada como tal, para o
+    // professor conferir. Nunca gravamos palpite como se viesse do documento.
     let gabarito: string | undefined;
-    if (alternatives.length > 0) {
-      gabarito = guessAlternativeFromStatement(statement);
+    let gabaritoOrigin: GabaritoOrigin | undefined;
+    let gabaritoConfidence: number | undefined;
+
+    if (number !== undefined) {
+      const fromKey = gabaritoMap.get(number);
+      if (fromKey) {
+        gabarito = fromKey;
+        gabaritoOrigin = 'document';
+        gabaritoConfidence = 0.95;
+      }
     }
-    if (!gabarito && number !== undefined) {
-      gabarito = gabaritoMap.get(number);
+
+    if (!gabarito && alternatives.length > 0) {
+      const guess = guessAlternativeFromStatement(statement);
+      if (guess) {
+        gabarito = guess;
+        gabaritoOrigin = 'heuristic';
+        gabaritoConfidence = 0.4;
+      }
+    }
+
+    // Coerência: a letra precisa existir entre as alternativas extraídas.
+    // Um gabarito "E" numa questão com 4 alternativas é ruído, não resposta.
+    if (gabarito && alternatives.length > 0) {
+      const letters = new Set(alternatives.map((a) => a.letter.toUpperCase()));
+      if (!letters.has(gabarito.toUpperCase())) {
+        gabarito = undefined;
+        gabaritoOrigin = undefined;
+        gabaritoConfidence = undefined;
+      }
     }
 
     if (!number) {
@@ -107,6 +145,8 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
       alternatives,
       images,
       gabarito,
+      gabaritoOrigin,
+      gabaritoConfidence,
     });
   }
 
@@ -115,6 +155,14 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
 
 // ─── Gabarito agregado ────────────────────────────────────────────────────
 
+/**
+ * Lê TODAS as tabelas de gabarito do documento.
+ *
+ * A versão anterior parava no primeiro cabeçalho e na primeira linha com pares,
+ * então uma prova de 45 questões só recebia o gabarito da primeira linha — as
+ * demais ficavam sem resposta e eram contadas como erro de todos os alunos.
+ * Aqui percorremos cada bloco de gabarito até ele acabar de fato.
+ */
 function extractGabaritoKey(text: string): Map<number, string> {
   const map = new Map<number, string>();
   const lines = text
@@ -122,23 +170,37 @@ function extractGabaritoKey(text: string): Map<number, string> {
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!GABARITO_HEADER_RE.test(line)) continue;
+  // Quantas linhas seguidas sem nenhum par "número → letra" encerram o bloco.
+  const MAX_GAP = 2;
 
-    // Examina a linha do cabeçalho e as 3 seguintes, procurando "número -> letra"
-    const candidates = [line, lines[i + 1], lines[i + 2], lines[i + 3]].filter(Boolean);
-    let foundPair = false;
-    for (const candidate of candidates) {
-      const matches = Array.from(candidate.matchAll(GABARITO_LINE_RE));
-      if (matches.length === 0) continue;
-      for (const m of matches) {
-        map.set(parseInt(m[1], 10), m[2].toUpperCase());
-        foundPair = true;
+  for (let i = 0; i < lines.length; i++) {
+    if (!GABARITO_HEADER_RE.test(lines[i])) continue;
+
+    let gap = 0;
+    for (let j = i; j < lines.length; j++) {
+      const candidate = lines[j];
+
+      // Um novo cabeçalho de gabarito (outra matéria, outro caderno) continua o bloco.
+      if (j > i && GABARITO_HEADER_RE.test(candidate)) {
+        gap = 0;
+        continue;
       }
-      if (foundPair) break;
+
+      const matches = Array.from(candidate.matchAll(GABARITO_LINE_RE));
+      if (matches.length === 0) {
+        gap += 1;
+        if (gap > MAX_GAP) break;
+        continue;
+      }
+
+      gap = 0;
+      for (const m of matches) {
+        const num = parseInt(m[1], 10);
+        // Primeira ocorrência vence: tabelas repetidas não sobrescrevem.
+        if (!map.has(num)) map.set(num, m[2].toUpperCase());
+      }
+      i = j; // não reprocessa linhas já consumidas por este bloco
     }
-    break;
   }
   return map;
 }

@@ -36,7 +36,9 @@ export class ResultController {
         .from('exam_questions')
         .select('questions(id, gabarito)')
         .eq('examId', id);
-      const total = (examQuestions ?? []).length;
+      // Só questões corrigíveis entram no total — igual ao cálculo do submit,
+      // para o aluno e o professor verem sempre a mesma nota (B24).
+      const total = (examQuestions ?? []).filter((eq) => (eq as any).questions?.gabarito).length;
 
       const result = (members ?? []).map((member) => {
         const user = (member as any).users;
@@ -145,7 +147,7 @@ export class ResultController {
   // Aluno: seu próprio resultado
   async myResult(req: AuthRequest, res: Response) {
     try {
-      const { examId } = req.params;
+      const { id: examId } = req.params;
 
       const { data: attempt } = await supabase
         .from('attempts')
@@ -163,7 +165,8 @@ export class ResultController {
         .select('"order", questions(id, number, statement, gabarito)')
         .eq('examId', examId)
         .order('order', { ascending: true });
-      const total = (examQuestions ?? []).length;
+      // Mesmo critério do submit e do painel do professor (B24).
+      const total = (examQuestions ?? []).filter((eq) => (eq as any).questions?.gabarito).length;
 
       const { data: answers } = await supabase
         .from('answers')

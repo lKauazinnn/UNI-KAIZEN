@@ -47,6 +47,21 @@ export class CatalogController {
       if (level === 1 && parentId) return res.status(400).json({ error: 'Disciplina não possui categoria pai' });
       if (level > 1 && !parentId) return res.status(400).json({ error: 'Informe o item pai' });
 
+      // O item pai precisa ser da mesma organização (B04) e do nível imediatamente acima.
+      if (parentId) {
+        const { data: parent } = await supabase
+          .from('catalog_items')
+          .select('organizationId, level')
+          .eq('id', parentId)
+          .single();
+        if (!parent || parent.organizationId !== req.organizationId) {
+          return res.status(400).json({ error: 'Item pai inválido' });
+        }
+        if (parent.level !== level - 1) {
+          return res.status(400).json({ error: 'Item pai não pertence ao nível correto' });
+        }
+      }
+
       const { data, error } = await supabase
         .from('catalog_items')
         .insert({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Save, Trash2, CheckCircle2, XCircle } from 'lucide-react';
 import { api, apiError } from '../../services/api';
@@ -52,14 +52,24 @@ export default function QuestionReview() {
     setError('');
     setSaving(true);
     try {
-      const payload: any = { statement, alternatives, gabarito: gabarito || null };
+      // O PATCH precisa levar SEMPRE o catalogItemId: o backend faz
+      // `catalogItemId: parsed.catalogItemId ?? null`, então omitir o campo
+      // APAGAVA a classificação recém-gravada. Por isso o PATCH vem primeiro e
+      // o classificate (que marca a origem como 'professor') vem depois.
+      await api.patch(`/questions/${id}`, {
+        statement,
+        alternatives,
+        gabarito: gabarito || null,
+        catalogItemId: catalogItemId || null,
+      });
+
       if (catalogItemId) {
         await api.post(`/questions/${id}/classificate`, { catalogItemId });
-      } else {
-        payload.catalogItemId = null;
       }
-      const { data } = await api.patch(`/questions/${id}`, payload);
-      setQuestion((prev) => ({ ...(data as Question), catalog_items: prev?.catalog_items }));
+
+      // Relê do servidor para refletir o estado real (inclusive catalog_items).
+      const { data: fresh } = await api.get(`/questions/${id}`);
+      setQuestion(fresh as Question);
       setFeedback('Questão salva.');
       setTimeout(() => setFeedback(''), 3000);
       setEditing(false);
@@ -172,16 +182,21 @@ export default function QuestionReview() {
                 <option key={alt.letter} value={alt.letter}>Letra {alt.letter}</option>
               ))}
             </Select>
-            <Select label="Classificação (tópico/subtópico)" value={catalogItemId} onChange={(e) => setCatalogItemId(e.target.value)}>
+            {/* O subtópico é OPCIONAL no backlog (B08): o professor tem de poder
+                parar na disciplina ou no tópico. Antes só subtópico era
+                selecionável, o que tornava inclassificável todo tópico sem filhos. */}
+            <Select label="Classificação (disciplina/tópico/subtópico)" value={catalogItemId} onChange={(e) => setCatalogItemId(e.target.value)}>
               <option value="">Não classificar</option>
               {catalog.map((dis) => (
                 <optgroup key={dis.id} label={dis.name}>
+                  <option value={dis.id}>{dis.name} (disciplina)</option>
                   {(dis.topics ?? []).map((topic) => (
-                    <optgroup key={topic.id} label={`  ${topic.name}`}>
+                    <Fragment key={topic.id}>
+                      <option value={topic.id}>&nbsp;&nbsp;{topic.name}</option>
                       {(topic.subtopics ?? []).map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                        <option key={sub.id} value={sub.id}>&nbsp;&nbsp;&nbsp;&nbsp;{sub.name}</option>
                       ))}
-                    </optgroup>
+                    </Fragment>
                   ))}
                 </optgroup>
               ))}
@@ -195,18 +210,31 @@ export default function QuestionReview() {
         </div>
       ) : (
         <div className="rounded-2xl bg-[color:var(--bg-card)] border border-[color:var(--border)] p-6">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {question.status && (
-              <Badge tone={question.status === 'approved' ? 'green' : question.status === 'rejected' ? 'red' : 'amber'}>
-                {question.status === 'approved' ? 'Aprovada' : question.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
-              </Badge>
-            )}
-            {question.gabarito && <Badge tone="teal">Gabarito: {question.gabarito.toUpperCase()}</Badge>}
-            {question.classificationSource === 'ai' && <Badge tone="neutral">Classificação sugerida por IA — conferir</Badge>}
-            {question.catalogItemId && question.catalog_items?.name && <Badge tone="blue">{question.catalog_items.name}</Badge>}
-          </div>
+          {/* Motivo da invalidez precisa ser visível aqui: era gravado no banco
+              mas nunca chegava ao professor (B17). */}
+          {question.status === 'rejected' && question.rejectionReason && (
+            <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
+              <p className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">Motivo da rejeição</p>
+              <p className="text-sm text-slate-300">{question.rejectionReason}</p>
+            </div>
+          )}
+
+          {question.gabaritoOrigin === 'heuristic' && (
+            <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+              <p className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-1">Gabarito deduzido</p>
+              <p className="text-sm text-slate-300">
+                Este gabarito não foi lido de uma tabela de respostas do PDF — foi deduzido do texto e
+                pode estar errado. Confira antes de aprovar.
+              </p>
+            </div>
+          )}
+
+          {/* As badges vêm do próprio QuestionView, que é o mesmo componente da
+              tela do aluno — evita divergência entre as duas telas (B14). */}
           <QuestionView question={question} />
-          <p className="mt-4 text-xs text-slate-500">Esta é a prévia exata do que o aluno verá ao responder o simulado.</p>
+          <p className="mt-4 text-xs text-slate-500">
+            Renderizado pelo mesmo componente usado na tela do aluno — o que você vê aqui é o que ele verá.
+          </p>
         </div>
       )}
 

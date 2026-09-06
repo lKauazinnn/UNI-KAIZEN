@@ -19,11 +19,24 @@ export class DashboardController {
       const turmas = tResp.count ?? 0;
       const questoes = qResp.count ?? 0;
 
-      const [{ data: statusRows }, { data: examRows }, { data: attempts }, { data: members }] = await Promise.all([
+      // Turmas e simulados da organização — usados para escopar tentativas/respostas,
+      // que não têm organizationId próprio (B04).
+      const [{ data: statusRows }, { data: examRows }, { data: orgTurmas }] = await Promise.all([
         supabase.from('questions').select('status').eq('organizationId', orgId),
         supabase.from('exams').select('id, title, status, createdBy, turmaId, turmas(name)').eq('organizationId', orgId).order('createdAt', { ascending: false }).limit(200),
-        supabase.from('attempts').select('id, examId, userId, status, submittedAt'),
-        supabase.from('turma_members').select('userId').eq('status', 'ativo'),
+        supabase.from('turmas').select('id').eq('organizationId', orgId),
+      ]);
+
+      const orgExamIds = (examRows ?? []).map((e) => e.id);
+      const orgTurmaIds = (orgTurmas ?? []).map((t) => t.id);
+
+      const [{ data: attempts }, { data: members }] = await Promise.all([
+        orgExamIds.length
+          ? supabase.from('attempts').select('id, examId, userId, status, submittedAt').in('examId', orgExamIds)
+          : Promise.resolve({ data: [] as any[] }),
+        orgTurmaIds.length
+          ? supabase.from('turma_members').select('userId').eq('status', 'ativo').in('turmaId', orgTurmaIds)
+          : Promise.resolve({ data: [] as any[] }),
       ]);
 
       const questaoCounts = { pending: 0, approved: 0, rejected: 0 };
@@ -42,7 +55,10 @@ export class DashboardController {
         attemptsByExam.get(attempt.examId)!.submitted += 1;
       }
 
-      const { data: allAnswers } = await supabase.from('answers').select('attemptId, isCorrect');
+      const orgAttemptIds = (attempts ?? []).map((a) => a.id);
+      const { data: allAnswers } = orgAttemptIds.length
+        ? await supabase.from('answers').select('attemptId, isCorrect').in('attemptId', orgAttemptIds)
+        : { data: [] as any[] };
       for (const ans of allAnswers ?? []) {
         const acc = attemptsByExam.get(ans.attemptId);
         if (!acc || ans.isCorrect === undefined || ans.isCorrect === null) continue;
@@ -74,15 +90,19 @@ export class DashboardController {
         if (attempt.status !== 'submitted') continue;
         if (!byUser.has(attempt.userId)) byUser.set(attempt.userId, { name: '', correct: 0, answered: 0 });
       }
+      // Uma única consulta, restrita à organização (evita N+1 e vazamento cross-tenant).
       const userNames = new Map<string, string>();
-      for (const attempt of attempts ?? []) {
-        if (!byUser.has(attempt.userId) || !attempt.userId) continue;
-        if (!userNames.has(attempt.userId)) {
-          const { data: u } = await supabase.from('users').select('name').eq('id', attempt.userId).single();
-          userNames.set(attempt.userId, u?.name ?? 'Aluno');
-        }
-        const acc = byUser.get(attempt.userId)!;
-        acc.name = userNames.get(attempt.userId) ?? acc.name;
+      const userIds = [...byUser.keys()].filter(Boolean);
+      if (userIds.length) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, name')
+          .eq('organizationId', orgId)
+          .in('id', userIds);
+        for (const u of users ?? []) userNames.set(u.id, u.name ?? 'Aluno');
+      }
+      for (const [userId, acc] of byUser.entries()) {
+        acc.name = userNames.get(userId) ?? 'Aluno';
       }
       for (const ans of allAnswers ?? []) {
         const attempt = (attempts ?? []).find((a) => a.id === ans.attemptId);
@@ -225,7 +245,15 @@ export class DashboardController {
           .select('isCorrect')
           .eq('attemptId', attempt.id);
         const correct = (answers ?? []).filter((a) => a.isCorrect).length;
-        const total = (answers ?? []).length;
+
+        // O total é o das questões corrigíveis do simulado, NÃO o número de
+        // respostas dadas. Usar respostas dadas fazia o aluno que respondeu
+        // metade da prova ver 100% aqui e 50% na tela de resultado (B24).
+        const { data: examQuestions } = await supabase
+          .from('exam_questions')
+          .select('questions(gabarito)')
+          .eq('examId', attempt.examId);
+        const total = (examQuestions ?? []).filter((eq) => (eq as any).questions?.gabarito).length;
         results.push({
           attemptId: attempt.id,
           examId: attempt.examId,

@@ -4,8 +4,6 @@ import {
   LayoutDashboard,
   Users,
   FileQuestion,
-  FileUp,
-  FileText,
   ClipboardList,
   BarChart3,
   LogOut,
@@ -20,15 +18,20 @@ const navPrimary = [
   { to: '/inicio', label: 'Início', icon: LayoutDashboard },
 ];
 
+// Backlog do MVP: o painel do professor tem exatamente cinco áreas
+// (Início vem de navPrimary). Importar PDF é uma ação dentro de Questões,
+// não uma área do menu.
 const navProfessor = [
   { to: '/professor/turmas', label: 'Turmas', icon: Users },
   { to: '/professor/questoes', label: 'Questões', icon: FileQuestion },
-  { to: '/professor/importar', label: 'Importar PDF', icon: FileUp },
   { to: '/professor/simulados', label: 'Simulados', icon: ClipboardList },
   { to: '/professor/resultados', label: 'Resultados', icon: BarChart3 },
 ];
 
+// A regra das cinco áreas vale para o painel do professor; o do aluno
+// precisa da entrada de turmas para ele conseguir solicitar vínculo (B07).
 const navAluno = [
+  { to: '/aluno/turmas', label: 'Minhas turmas', icon: Users },
   { to: '/aluno/simulados', label: 'Simulados', icon: BookOpen },
   { to: '/aluno/resultados', label: 'Meus resultados', icon: BarChart3 },
 ];
@@ -92,13 +95,6 @@ export function Layout({ children }: { children: ReactNode }) {
           {(isProfessor ? navProfessor : navAluno).map((item) => (
             <SidebarItem key={item.to} {...item} />
           ))}
-
-          {isProfessor && (
-            <>
-              <p className="px-4 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Conteúdo</p>
-              <SidebarItem to="/professor/questoes" label="Banco de questões" icon={FileText} />
-            </>
-          )}
 
           {user?.role === 'admin' && (
             <>

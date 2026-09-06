@@ -102,9 +102,11 @@ export class ImportController {
               statement: q.statement,
               alternatives: q.alternatives.filter((a) => a.text.trim().length > 0),
               images,
+              // A origem vem do extrator, por questão. Palpite heurístico NUNCA
+              // é gravado como 'document' (B12).
               gabarito: q.gabarito?.toUpperCase() ?? null,
-              gabaritoOrigin: q.gabarito ? 'document' : null,
-              gabaritoConfidence: q.gabarito ? (result.answeredFromKey ? 0.95 : 0.6) : null,
+              gabaritoOrigin: q.gabarito ? q.gabaritoOrigin ?? 'heuristic' : null,
+              gabaritoConfidence: q.gabarito ? q.gabaritoConfidence ?? 0.4 : null,
               catalogItemId: suggestion?.catalogItemId ?? null,
               classificationSource: suggestion?.source ?? null,
               status: 'pending',

@@ -1,10 +1,35 @@
-import { ChangeEvent, DragEvent, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileUp, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
+import { FileUp, AlertTriangle, FileText, CheckCircle2, Loader2, XCircle, RefreshCw } from 'lucide-react';
 import { api, apiError } from '../../services/api';
-import { Question } from '../../types';
+import { ImportJob, Question } from '../../types';
 import { PageHeader, Card, Button, Spinner, Badge } from '../../components/ui';
 import { QuestionView } from '../../components/QuestionView';
+
+const jobStatusLabel: Record<ImportJob['status'], string> = {
+  processing: 'Processando',
+  completed: 'Concluída',
+  failed: 'Falhou',
+};
+
+const jobStatusTone: Record<ImportJob['status'], 'amber' | 'green' | 'red'> = {
+  processing: 'amber',
+  completed: 'green',
+  failed: 'red',
+};
+
+function JobStatusIcon({ status }: { status: ImportJob['status'] }) {
+  if (status === 'processing') return <Loader2 size={18} className="text-amber-400 animate-spin" />;
+  if (status === 'failed') return <XCircle size={18} className="text-red-400" />;
+  return <CheckCircle2 size={18} className="text-emerald-400" />;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 export default function ImportPdf() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -13,6 +38,21 @@ export default function ImportPdf() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ questions: Question[]; warnImages?: string } | null>(null);
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+
+  // B09: o status do job de importação precisa ficar visível, inclusive
+  // depois de recarregar a página.
+  const loadJobs = () => {
+    setJobsLoading(true);
+    api
+      .get('/imports')
+      .then(({ data }) => setJobs(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setJobsLoading(false));
+  };
+
+  useEffect(loadJobs, []);
 
   const sendFile = (file: File) => {
     if (!file) return;
@@ -34,7 +74,10 @@ export default function ImportPdf() {
         setResult({ questions: res.data.questions ?? [], warnImages: res.data.warnImages });
       })
       .catch((err) => setError(apiError(err)))
-      .finally(() => setProcessing(false));
+      .finally(() => {
+        setProcessing(false);
+        loadJobs();
+      });
   };
 
   const onDrop = (e: DragEvent) => {
@@ -131,6 +174,53 @@ export default function ImportPdf() {
           </div>
         </div>
       )}
+
+      <section className="mt-10">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="font-bold text-slate-100">Importações recentes</h2>
+            <p className="text-sm text-slate-400 mt-0.5">Acompanhe o status de cada arquivo enviado.</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={loadJobs} disabled={jobsLoading}>
+            <RefreshCw size={15} /> Atualizar
+          </Button>
+        </div>
+
+        {jobsLoading && jobs.length === 0 ? (
+          <Spinner label="Carregando importações..." />
+        ) : jobs.length === 0 ? (
+          <Card className="!p-5">
+            <p className="text-sm text-slate-400">Nenhuma importação registrada ainda. Envie um PDF para começar.</p>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {jobs.map((job) => (
+              <Card key={job.id} className="!p-4">
+                <div className="flex items-start gap-4">
+                  <div className="p-2.5 rounded-xl bg-slate-500/10 border border-[color:var(--border)] shrink-0">
+                    <JobStatusIcon status={job.status} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <Badge tone={jobStatusTone[job.status]}>{jobStatusLabel[job.status]}</Badge>
+                      <Badge tone="neutral">{job.totalQuestions ?? 0} questão(is) extraída(s)</Badge>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-200 truncate" title={job.fileName}>
+                      {job.fileName}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">{formatDate(job.createdAt)}</p>
+                    {job.status === 'failed' && job.errorMessage && (
+                      <p className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-2">
+                        {job.errorMessage}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

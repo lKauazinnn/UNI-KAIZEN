@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, UserPlus, ClipboardList, FileText, Check, X, Megaphone } from 'lucide-react';
+import { ArrowLeft, UserPlus, ClipboardList, FileText, Check, X, Megaphone, Pencil, Archive } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { TurmaDetail, Notice } from '../../types';
 import { PageHeader, Card, Button, Badge, Spinner, EmptyState, Modal, Input, Textarea, ConfirmDialog } from '../../components/ui';
@@ -23,6 +23,9 @@ export default function ClassDetail() {
   const [saving, setSaving] = useState(false);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [createdStudent, setCreatedStudent] = useState<{ name?: string; email: string; password: string } | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const load = () => {
     if (!id) return;
@@ -34,6 +37,42 @@ export default function ClassDetail() {
   };
 
   useEffect(load, [id]);
+
+  const openRename = () => {
+    setError('');
+    setRenameValue(turma?.name ?? '');
+    setRenameOpen(true);
+  };
+
+  const rename = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      await api.patch(`/classes/${id}`, { name: renameValue });
+      setRenameOpen(false);
+      setFeedback('Turma renomeada com sucesso.');
+      setTimeout(() => setFeedback(''), 4000);
+      load();
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const archive = async () => {
+    setArchiveOpen(false);
+    setError('');
+    try {
+      await api.post(`/classes/${id}/archive`);
+      setFeedback('Turma arquivada — ela sai da lista de turmas ativas.');
+      setTimeout(() => setFeedback(''), 5000);
+      load();
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
 
   const linkStudent = async (e: FormEvent) => {
     e.preventDefault();
@@ -114,10 +153,19 @@ export default function ClassDetail() {
       </Link>
 
       <PageHeader
-        title={turma.name}
+        title={
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            {turma.name}
+            {turma.archived && <Badge tone="amber">Arquivada</Badge>}
+          </span>
+        }
         subtitle={`${active.length} aluno(s) ativo(s)`}
         actions={
           <>
+            <Button variant="outline" onClick={openRename}><Pencil size={16} /> Renomear</Button>
+            {!turma.archived && (
+              <Button variant="outline" onClick={() => setArchiveOpen(true)}><Archive size={16} /> Arquivar</Button>
+            )}
             <Button variant="outline" onClick={() => setCsvOpen(true)}><FileText size={16} /> Importar CSV</Button>
             <Button variant="outline" onClick={() => setNoticeOpen(true)}><Megaphone size={16} /> Avisar turma</Button>
             <Button onClick={() => setLinkOpen(true)}><UserPlus size={16} /> Vincular aluno</Button>
@@ -126,6 +174,9 @@ export default function ClassDetail() {
       />
 
       {feedback && <div className="mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm px-4 py-3">{feedback}</div>}
+      {error && !linkOpen && !csvOpen && !noticeOpen && !renameOpen && (
+        <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3">{error}</div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -211,6 +262,28 @@ export default function ClassDetail() {
           )}
         </Card>
       </div>
+
+      {/* Renomear turma */}
+      <Modal open={renameOpen} onClose={() => setRenameOpen(false)} title="Renomear turma">
+        <form onSubmit={rename} className="space-y-4">
+          {error && <div className="rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3">{error}</div>}
+          <Input label="Novo nome" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="Ex.: 3º Ano A — Ensino Médio" required autoFocus />
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="ghost" onClick={() => setRenameOpen(false)}>Cancelar</Button>
+            <Button type="submit" loading={saving}>Salvar nome</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+        onConfirm={archive}
+        title="Arquivar turma"
+        message="A turma sairá da lista de turmas ativas e passará a aparecer somente na aba Arquivadas. Os alunos e simulados existentes são preservados."
+        confirmLabel="Arquivar"
+        danger
+      />
 
       {/* Vincular aluno */}
       <Modal open={linkOpen} onClose={() => setLinkOpen(false)} title="Vincular aluno">
