@@ -33,6 +33,14 @@ export function QuestionView({
       <div className="text-slate-100 leading-relaxed whitespace-pre-wrap">{question.statement}</div>
 
       {question.images && question.images.length > 0 && (
+        question.images[0]?.url ? (
+          <div className="rounded-xl border border-[color:var(--border)] overflow-hidden">
+            <img src={question.images[0].url} alt={question.images[0].caption || 'Elemento visual da questão'} className="w-full h-auto" />
+            {question.images[0].caption && (
+              <p className="px-3 py-2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-800/60">{question.images[0].caption}</p>
+            )}
+          </div>
+        ) : (
         <div className="rounded-xl border border-primary-500/20 bg-primary-500/5 p-4">
           <p className="text-xs font-bold text-primary-300 uppercase tracking-wide mb-1">Referência visual preservada</p>
           <p className="text-sm text-slate-300">{whatsappTip}</p>
@@ -42,6 +50,7 @@ export function QuestionView({
             ))}
           </ul>
         </div>
+        )
       )}
 
       <div className={compact ? 'space-y-2' : 'space-y-2.5'}>

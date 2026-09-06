@@ -29,7 +29,7 @@ export default function ImportPdf() {
     formData.append('file', file);
 
     api
-      .post('/import/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .post('/imports/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then((res) => {
         setResult({ questions: res.data.questions ?? [], warnImages: res.data.warnImages });
       })

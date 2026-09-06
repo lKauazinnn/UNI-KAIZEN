@@ -139,9 +139,18 @@ export default function TakeExam() {
             </div>
             <p className="text-slate-100 leading-relaxed whitespace-pre-wrap mb-4">{q.statement}</p>
             {q.images && q.images.length > 0 && (
+              q.images[0]?.url ? (
+                <div className="mb-4 rounded-xl border border-[color:var(--border)] overflow-hidden">
+                  <img src={q.images[0].url} alt={q.images[0].caption || 'Elemento visual da questão'} className="w-full h-auto" />
+                  {q.images[0].caption && (
+                    <p className="px-3 py-2 text-xs text-slate-400 bg-slate-100 dark:bg-slate-800/60">{q.images[0].caption}</p>
+                  )}
+                </div>
+              ) : (
               <div className="mb-4 rounded-xl border border-primary-500/20 bg-primary-500/5 p-3">
                 <p className="text-xs text-slate-400">{q.images.map((i) => i.caption || i.type || 'Figura').join(' · ')}</p>
               </div>
+              )
             )}
             <div className="space-y-2.5">
               {q.alternatives.map((alt) => {

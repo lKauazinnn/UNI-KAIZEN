@@ -6,6 +6,7 @@ export interface ExtractedAlternative {
 }
 
 export interface ExtractedImage {
+  url?: string;
   caption?: string;
   source?: string;
   page?: number;

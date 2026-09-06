@@ -70,6 +70,6 @@ O teste cobre o fluxo completo (B02-B26) e o isolamento entre organizações (B0
 
 ## Limitações do MVP (pós-piloto)
 
-- **Imagens do PDF (B11)**: os elementos visuais são extraídos como referências (captions) para validação manual; a extração completa de imagens do PDF é uma melhoria futura.
+- **Extração de visuais (B11)**: imagens, gráficos, mapas e diagramas do PDF são preservados como recortes das páginas (`pdf.js` + `@napi-rs/canvas`), enviados ao bucket `question-visuals` do Supabase e exibidos ao professor e ao aluno. PDFs com fontes não embutidas podem gerar recorte sem texto — o professor revisa e corrige o gabarito/visual na tela de revisão.
 - **Classificação por IA (B13)**: opcional via `GROQ_API_KEY`; sem a chave o professor classifica manualmente.
 - **Senha temporária de alunos (CSV/link)**: definida na criação (formato `kaizen!xxxxxx`) e exibida no retorno da API — o envio por e-mail é melhoria futura.

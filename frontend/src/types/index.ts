@@ -58,8 +58,11 @@ export interface Alternative {
 
 export interface QuestionImage {
   id?: string;
+  url?: string;
   caption?: string;
   type?: string;
+  source?: string;
+  page?: number;
 }
 
 export interface Question {

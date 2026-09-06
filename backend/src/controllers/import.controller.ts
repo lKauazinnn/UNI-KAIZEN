@@ -5,8 +5,11 @@ import multer from 'multer';
 import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { extractQuestionsFromPdf } from '../lib/pdf';
+import { extractVisualRegions } from '../lib/pdf-visuals';
 import { classifyQuestion } from '../lib/ai';
 import { logAudit } from '../lib/audit';
+
+const VISUAL_BUCKET = 'question-visuals';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -50,6 +53,16 @@ export class ImportController {
         const result = await extractQuestionsFromPdf(file.buffer);
         const catalog = await this.fetchCatalogForOrg(req.organizationId!);
 
+        // B11: renderiza cada página e recorta a região visual de cada questão
+        const regions = await extractVisualRegions(file.buffer).catch((visualError) => {
+          console.error('[import] falha ao extrair visuais:', visualError);
+          return [];
+        });
+        const regionByNumber = new Map<number, any>();
+        for (const region of regions) {
+          if (!regionByNumber.has(region.questionNumber)) regionByNumber.set(region.questionNumber, region);
+        }
+
         // Classificação assistida por IA (B13) — opcional, sequencial
         const inserted: any[] = [];
         for (const [index, q] of result.questions.entries()) {
@@ -59,6 +72,23 @@ export class ImportController {
               q.statement + '\n' + q.alternatives.map((a) => `${a.letter}) ${a.text}`).join('\n'),
               catalog.map((c) => ({ id: c.id, level: c.level, name: c.name, parentId: c.parentId }))
             );
+          }
+
+          const region = regionByNumber.get(q.number ?? -1);
+          let images = q.images;
+          if (region) {
+            const key = `pag${region.pageIndex}-q${q.number ?? index + 1}.png`;
+            const url = await this.uploadVisual(req.organizationId!, job.id, key, region.buffer);
+            if (url) {
+              images = [
+                {
+                  url,
+                  caption: q.images.length > 0 ? q.images[0].caption : `Visual da página ${region.pageIndex}`,
+                  source: 'pdf-page',
+                  page: region.pageIndex,
+                },
+              ];
+            }
           }
 
           const { data: created, error: qErr } = await supabase
@@ -71,7 +101,7 @@ export class ImportController {
               number: q.number ?? index + 1,
               statement: q.statement,
               alternatives: q.alternatives.filter((a) => a.text.trim().length > 0),
-              images: q.images,
+              images,
               gabarito: q.gabarito?.toUpperCase() ?? null,
               gabaritoOrigin: q.gabarito ? 'document' : null,
               gabaritoConfidence: q.gabarito ? (result.answeredFromKey ? 0.95 : 0.6) : null,
@@ -114,8 +144,9 @@ export class ImportController {
           job: { ...job, status: 'completed', totalQuestions: inserted.length },
           questions: inserted,
           warnImages:
-            'Os elementos visuais detectados foram preservados como referências. ' +
-            'A extração completa de imagens do PDF é uma melhoria pós-piloto; revise cada questão visualmente.',
+            regionByNumber.size === 0
+              ? 'Não foi possível extrair automaticamente o visual de cada questão deste PDF. Revise cada questão visualmente antes de aprovar.'
+              : undefined,
         });
       } catch (extractError) {
         console.error('Erro na extração:', extractError);
@@ -184,6 +215,33 @@ export class ImportController {
       .select('id, level, name, parentId')
       .eq('organizationId', orgId);
     return data ?? [];
+  }
+
+  // ─── Supabase Storage (B11: gráficos/imagens reais por questão) ──────────
+  private async ensureVisualBucket() {
+    const { error } = await supabase.storage.getBucket(VISUAL_BUCKET);
+    if (!error) return;
+    const { error: createError } = await supabase.storage.createBucket(VISUAL_BUCKET, {
+      public: true,
+      fileSizeLimit: 15 * 1024 * 1024,
+    });
+    if (createError) {
+      console.error('[storage] erro ao criar bucket:', createError.message);
+    }
+  }
+
+  private async uploadVisual(orgId: string, jobId: string, key: string, buffer: Buffer): Promise<string | null> {
+    await this.ensureVisualBucket();
+    const path = `${orgId}/${jobId}/${key}`;
+    const { error: uploadError } = await supabase.storage
+      .from(VISUAL_BUCKET)
+      .upload(path, buffer, { contentType: 'image/png', upsert: true });
+    if (uploadError) {
+      console.error('[storage] erro ao enviar visual:', uploadError.message);
+      return null;
+    }
+    const { data } = await supabase.storage.from(VISUAL_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
   }
 }
 
