@@ -255,13 +255,35 @@ export class AttemptController {
 
       // Questões sem gabarito não entram no total: contá-las como erro faria a
       // turma inteira perder ponto por uma falha de importação (B24).
+      // Normalizador para comparação de respostas livres (remove espaços extras, acentos e pontuações finais)
+      const normalizeTextAnswer = (text: string) =>
+        text
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/\s+/g, ' ')
+          .replace(/[\.;,]$/, '');
+
       let correctCount = 0;
       for (const answer of answers ?? []) {
-        const gabarito = gabaritoByQuestion.get(answer.questionId);
-        const isCorrect =
-          answer.selected != null &&
-          gabarito != null &&
-          answer.selected.toUpperCase() === gabarito.toUpperCase();
+        const rawGabarito = gabaritoByQuestion.get(answer.questionId);
+        let isCorrect = false;
+
+        if (answer.selected != null && rawGabarito != null) {
+          const sel = answer.selected.trim();
+          const gab = rawGabarito.trim();
+          // 1. Comparação direta ou de letra (múltipla escolha)
+          if (sel.toUpperCase() === gab.toUpperCase()) {
+            isCorrect = true;
+          } else {
+            // 2. Comparação normalizada para resposta livre / dissertativa
+            const normSel = normalizeTextAnswer(sel);
+            const normGab = normalizeTextAnswer(gab);
+            isCorrect = normSel === normGab || normGab.includes(normSel) && normSel.length >= 2;
+          }
+        }
+
         if (isCorrect) correctCount += 1;
 
         const { error: updErr } = await supabase

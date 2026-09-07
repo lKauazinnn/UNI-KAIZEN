@@ -81,7 +81,7 @@ export default function Results() {
                     <>
                       <ProgressBar percent={s.percent} />
                       <p className="text-xs text-slate-500 mt-1.5">
-                        {s.correct} de {byExam?.total} corretas · {s.submittedAt ? `entregue em ${new Date(s.submittedAt).toLocaleString('pt-BR')}` : ''}
+                        {s.correct} de {byExam?.total} corretas · {s.submittedAt ? `entregue em ${new Date(s.submittedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ''}
                       </p>
                     </>
                   )}

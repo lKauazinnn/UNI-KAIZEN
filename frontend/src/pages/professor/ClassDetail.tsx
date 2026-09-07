@@ -254,7 +254,7 @@ export default function ClassDetail() {
                 <div key={n.id} className="rounded-xl border border-[color:var(--border)] p-3">
                   <p className="text-sm text-slate-200">{n.message}</p>
                   <p className="text-[11px] text-slate-500 mt-1.5">
-                    {n.users?.name} · {new Date(n.createdAt).toLocaleString('pt-BR')}
+                    {n.users?.name} · {new Date(n.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                   </p>
                 </div>
               ))}

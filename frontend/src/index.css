@@ -12,12 +12,12 @@
 }
 
 html.light {
-  --bg-page: #f6f9fb;
+  --bg-page: #f8fafc;
   --bg-card: #ffffff;
-  --bg-card-2: #f0f5f7;
-  --border: #dfe8ee;
-  --text-1: #12202c;
-  --text-2: #41556a;
+  --bg-card-2: #f1f5f9;
+  --border: #e2e8f0;
+  --text-1: #0f172a;
+  --text-2: #475569;
 }
 
 html {
@@ -33,12 +33,35 @@ body {
   background: radial-gradient(circle at 15% -10%, #0f1a24 0%, #0b1016 45%, #080c11 100%);
   color: #dbe3ee;
   min-height: 100vh;
-  transition: background 0.4s ease, color 0.3s ease;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 html.light body {
-  background: linear-gradient(160deg, #f6f9fb 0%, #eef4f7 50%, #f1f6f9 100%);
+  background: #f8fafc;
   color: #1e293b;
+}
+
+/* Garante legibilidade de títulos no tema claro */
+html.light h1,
+html.light h2,
+html.light h3,
+html.light h4,
+html.light h5,
+html.light h6 {
+  color: #0f172a !important;
+}
+
+/* Utilitários adaptados para texto claro/escuro */
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #1e293b !important;
+}
+html.light .text-slate-300,
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+html.light .text-slate-500 {
+  color: #64748b !important;
 }
 
 h1, h2, h3, h4, h5, h6 {

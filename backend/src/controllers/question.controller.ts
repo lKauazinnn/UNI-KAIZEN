@@ -6,8 +6,8 @@ import { logAudit } from '../lib/audit';
 
 const updateSchema = z.object({
   statement: z.string().min(1, 'Enunciado obrigatório'),
-  alternatives: z.array(z.object({ letter: z.string(), text: z.string() })).min(2, 'A questão precisa ter pelo menos 2 alternativas'),
-  gabarito: z.string().regex(/^[A-Ea-e]$/, 'Gabarito deve ser uma letra entre A e E').nullable().optional(),
+  alternatives: z.array(z.object({ letter: z.string(), text: z.string() })).optional().default([]),
+  gabarito: z.string().nullable().optional(),
   gabaritoOrigin: z.enum(['document', 'ai', 'professor']).nullable().optional(),
   catalogItemId: z.string().nullable().optional(),
 });
@@ -37,9 +37,17 @@ export class QuestionController {
       if (status && status !== 'all') query = query.eq('status', status);
       if (importJobId) query = query.eq('importJobId', importJobId);
       if (catalogItemId) query = query.eq('catalogItemId', catalogItemId);
-      if (search) query = query.ilike('statement', '%' + search + '%');
-
-      query = query.order('createdAt', { ascending: false });
+      const order = req.query.order as string | undefined;
+      if (order === 'createdDesc') {
+        query = query.order('createdAt', { ascending: false });
+      } else if (order === 'createdAsc') {
+        query = query.order('createdAt', { ascending: true });
+      } else {
+        // Padrão amigável: ordenação numérica das questões (1, 2, 3...)
+        query = query
+          .order('number', { ascending: true, nullsFirst: false })
+          .order('createdAt', { ascending: false });
+      }
 
       if (paginated) {
         const from = (page - 1) * pageSize;
@@ -272,7 +280,7 @@ export class QuestionController {
     }
   }
 
-  // Validação técnica mínima para entrar no simulado
+  // Validação técnica mínima para entrar no simulado (suporta múltipla escolha e resposta livre)
   private async validateQuestion(id: string, orgId: string): Promise<{ valid: boolean; reason?: string }> {
     const { data: q } = await supabase
       .from('questions')
@@ -281,25 +289,32 @@ export class QuestionController {
       .eq('organizationId', orgId)
       .single();
     if (!q) return { valid: false, reason: 'Questão não encontrada' };
-    const alts = Array.isArray(q.alternatives) ? q.alternatives : [];
     if (!q.statement || q.statement.trim().length < 5) return { valid: false, reason: 'Enunciado ausente ou muito curto' };
-    if (alts.filter((a: any) => a?.text?.trim()).length < 2) return { valid: false, reason: 'Menos de 2 alternativas válidas' };
 
-    // Letras das alternativas normalizadas (A, B, C...)
-    const letters = alts
-      .map((a: any) => String(a?.letter ?? '').trim().toUpperCase())
-      .filter((l: string) => l.length > 0);
+    const alts = Array.isArray(q.alternatives) ? q.alternatives.filter((a: any) => a?.text?.trim()) : [];
+    const gabarito = typeof q.gabarito === 'string' ? q.gabarito.trim() : '';
 
-    // Letras duplicadas tornam a correção ambígua.
-    if (new Set(letters).size !== letters.length) {
-      return { valid: false, reason: 'Alternativas com letras duplicadas' };
-    }
+    if (!gabarito) return { valid: false, reason: 'Sem gabarito ou resposta esperada definida' };
 
-    // Sem gabarito a questão entraria no simulado e todos os alunos errariam.
-    const gabarito = typeof q.gabarito === 'string' ? q.gabarito.trim().toUpperCase() : '';
-    if (!gabarito) return { valid: false, reason: 'Sem gabarito definido' };
-    if (!letters.includes(gabarito)) {
-      return { valid: false, reason: 'Gabarito não corresponde a nenhuma alternativa' };
+    // Se tem alternativas, valida como múltipla escolha
+    if (alts.length > 0) {
+      if (alts.length < 2) return { valid: false, reason: 'Menos de 2 alternativas válidas' };
+      const letters = alts
+        .map((a: any) => String(a?.letter ?? '').trim().toUpperCase())
+        .filter((l: string) => l.length > 0);
+
+      if (new Set(letters).size !== letters.length) {
+        return { valid: false, reason: 'Alternativas com letras duplicadas' };
+      }
+
+      if (!letters.includes(gabarito.toUpperCase())) {
+        return { valid: false, reason: 'Gabarito não corresponde a nenhuma alternativa' };
+      }
+    } else {
+      // Resposta livre / dissertativa: precisa apenas de um gabarito / resposta esperada em texto
+      if (gabarito.length < 1) {
+        return { valid: false, reason: 'Questão dissertativa requer uma resposta esperada' };
+      }
     }
 
     return { valid: true };

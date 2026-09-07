@@ -111,52 +111,80 @@ export function QuestionView({
         </div>
       )}
 
-      <div className={compact ? 'space-y-2' : 'space-y-2.5'}>
-        {question.alternatives.map((alt) => {
-          const isSelected = isExam && selected === alt.letter;
-          const conteudo = (
-            <>
-              <span
-                className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold transition ${
-                  isSelected
-                    ? 'bg-primary-500 border-primary-500 text-white'
-                    : 'border-slate-500 text-slate-600 dark:text-slate-300'
+      {question.alternatives && question.alternatives.length > 0 ? (
+        <div className={compact ? 'space-y-2' : 'space-y-2.5'}>
+          {question.alternatives.map((alt) => {
+            const isSelected = isExam && selected === alt.letter;
+            const conteudo = (
+              <>
+                <span
+                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold transition ${
+                    isSelected
+                      ? 'bg-primary-500 border-primary-500 text-white'
+                      : 'border-slate-500 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {alt.letter}
+                </span>
+                <span className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{alt.text}</span>
+              </>
+            );
+
+            const base = 'w-full text-left flex items-start gap-3 rounded-xl border px-4 py-3 transition';
+
+            return isExam ? (
+              <button
+                key={alt.letter}
+                type="button"
+                onClick={() => onSelect?.(isSelected ? null : alt.letter)}
+                className={`${base} ${
+                  isSelected ? 'border-primary-500/60 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'
                 }`}
               >
-                {alt.letter}
-              </span>
-              <span className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{alt.text}</span>
-            </>
-          );
+                {conteudo}
+              </button>
+            ) : (
+              <div
+                key={alt.letter}
+                className={`${base} border-[color:var(--border)] bg-white dark:bg-slate-900/40`}
+              >
+                {conteudo}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-[color:var(--border)] bg-white dark:bg-slate-900/40 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Badge tone="blue">Questão de Resposta Livre</Badge>
+            <span className="text-xs text-slate-400">O aluno digita a resposta em texto/número</span>
+          </div>
 
-          const base = 'w-full text-left flex items-start gap-3 rounded-xl border px-4 py-3 transition';
-
-          return isExam ? (
-            <button
-              key={alt.letter}
-              type="button"
-              onClick={() => onSelect?.(isSelected ? null : alt.letter)}
-              className={`${base} ${
-                isSelected ? 'border-primary-500/60 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'
-              }`}
-            >
-              {conteudo}
-            </button>
-          ) : (
-            <div
-              key={alt.letter}
-              className={`${base} border-[color:var(--border)] bg-white dark:bg-slate-900/40`}
-            >
-              {conteudo}
+          {isExam ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5">
+                Digite sua resposta ou resolução resumida:
+              </label>
+              <textarea
+                value={selected ?? ''}
+                onChange={(e) => onSelect?.(e.target.value)}
+                placeholder="Digite sua resposta aqui..."
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 min-h-[90px]"
+              />
             </div>
-          );
-        })}
-      </div>
-
-      {question.alternatives.length === 0 && (
-        <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
-          Nenhuma alternativa foi identificada nesta questão.
-        </p>
+          ) : (
+            question.gabarito && (
+              <div className="rounded-lg bg-primary-500/10 border border-primary-500/20 p-3">
+                <p className="text-xs font-bold text-primary-400 uppercase tracking-wide mb-1">
+                  Resposta oficial / esperada:
+                </p>
+                <p className="text-sm font-semibold text-slate-200 whitespace-pre-wrap">
+                  {question.gabarito}
+                </p>
+              </div>
+            )
+          )}
+        </div>
       )}
     </div>
   );

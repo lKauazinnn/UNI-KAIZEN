@@ -56,8 +56,10 @@ export default function ImportPdf() {
 
   const sendFile = (file: File) => {
     if (!file) return;
-    if (!/\.pdf$/i.test(file.name)) {
-      setError('Apenas arquivos PDF são aceitos.');
+    const isPdf = /\.pdf$/i.test(file.name);
+    const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
+    if (!isPdf && !isImage) {
+      setError('Apenas arquivos PDF ou Imagens (PNG, JPG, WebP) são aceitos.');
       return;
     }
     setError('');
@@ -95,7 +97,7 @@ export default function ImportPdf() {
   return (
     <div className="animate-fade-in max-w-3xl">
       <PageHeader
-        title="Importar PDF"
+        title="Importar Questões (PDF ou Imagem)"
         subtitle="A IA extrai as questões, preserva os elementos visuais e sugere a classificação. Você revisa e aprova."
       />
 
@@ -116,9 +118,9 @@ export default function ImportPdf() {
           <div className="mx-auto mb-4 p-4 rounded-2xl bg-primary-500/10 border border-primary-500/20 w-fit">
             <FileUp size={40} className="text-primary-400" />
           </div>
-          <p className="font-bold text-slate-100 mb-1">Arraste o PDF de questões aqui</p>
-          <p className="text-sm text-slate-400 mb-4">ou clique para escolher o arquivo (máx. 15 MB)</p>
-          <input ref={inputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={onSelect} />
+          <p className="font-bold text-slate-100 mb-1">Arraste um PDF ou Imagem de questões aqui</p>
+          <p className="text-sm text-slate-400 mb-4">PDF, PNG, JPG ou WebP (máx. 20 MB)</p>
+          <input ref={inputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={onSelect} />
         </div>
       )}
 

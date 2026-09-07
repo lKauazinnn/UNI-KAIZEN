@@ -176,12 +176,22 @@ export default function QuestionReview() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Gabarito" value={gabarito} onChange={(e) => setGabarito(e.target.value)}>
-              <option value="">Sem gabarito</option>
-              {alternatives.filter((a) => a.text.trim()).map((alt) => (
-                <option key={alt.letter} value={alt.letter}>Letra {alt.letter}</option>
-              ))}
-            </Select>
+            {alternatives.length > 0 ? (
+              <Select label="Gabarito (Letra)" value={gabarito} onChange={(e) => setGabarito(e.target.value)}>
+                <option value="">Sem gabarito</option>
+                {alternatives.filter((a) => a.text.trim()).map((alt) => (
+                  <option key={alt.letter} value={alt.letter}>Letra {alt.letter}</option>
+                ))}
+              </Select>
+            ) : (
+              <Input
+                label="Gabarito / Resposta esperada"
+                value={gabarito}
+                onChange={(e) => setGabarito(e.target.value)}
+                placeholder="Ex.: 4√3, x = 2, Verdadeiro..."
+                hint="Digite o valor ou expressão esperada para a questão dissertativa"
+              />
+            )}
             {/* O subtópico é OPCIONAL no backlog (B08): o professor tem de poder
                 parar na disciplina ou no tópico. Antes só subtópico era
                 selecionável, o que tornava inclassificável todo tópico sem filhos. */}

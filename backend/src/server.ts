@@ -54,7 +54,8 @@ if (process.env.NODE_ENV !== 'production') {
       dbReachable: !error,
       hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY,
       hasAnonKey: !!process.env.SUPABASE_ANON_KEY,
-      hasAi: Boolean(process.env.GROQ_API_KEY),
+      hasAi: Boolean(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY),
+      aiProvider: process.env.GEMINI_API_KEY ? 'gemini' : process.env.GROQ_API_KEY ? 'groq' : null,
       nodeEnv: process.env.NODE_ENV ?? 'development',
     });
   });

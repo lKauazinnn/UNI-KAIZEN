@@ -6,17 +6,19 @@ import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { extractQuestionsFromPdf } from '../lib/pdf';
 import { extractVisualRegions } from '../lib/pdf-visuals';
-import { classifyQuestion } from '../lib/ai';
+import { classifyQuestion, extractQuestionFromImage } from '../lib/ai';
 import { logAudit } from '../lib/audit';
 
 const VISUAL_BUCKET = 'question-visuals';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (!/pdf/i.test(file.mimetype) && !/.pdf$/i.test(file.originalname)) {
-      return cb(new Error('Apenas arquivos PDF são aceitos'));
+    const isPdf = /pdf/i.test(file.mimetype) || /\.pdf$/i.test(file.originalname);
+    const isImage = /image\/(png|jpe?g|webp)/i.test(file.mimetype) || /\.(png|jpe?g|webp)$/i.test(file.originalname);
+    if (!isPdf && !isImage) {
+      return cb(new Error('Apenas arquivos PDF ou Imagens (PNG, JPG, WebP) são aceitos'));
     }
     cb(null, true);
   },
@@ -27,7 +29,9 @@ export class ImportController {
   async upload(req: AuthRequest, res: Response) {
     try {
       const file = (req as any).file as Express.Multer.File | undefined;
-      if (!file) return res.status(400).json({ error: 'Envie um arquivo PDF' });
+      if (!file) return res.status(400).json({ error: 'Envie um arquivo PDF ou Imagem' });
+
+      const isImage = /image\/(png|jpe?g|webp)/i.test(file.mimetype) || /\.(png|jpe?g|webp)$/i.test(file.originalname);
 
       const now = new Date().toISOString();
       const { data: job, error: jobError } = await supabase
@@ -48,7 +52,92 @@ export class ImportController {
         return res.status(500).json({ error: 'Erro ao iniciar importação' });
       }
 
-      // ── Extração (B10: separar questões; B11: preservar visuais; B12: gabarito) ──
+      // ── Processamento de IMAGEM (Gemini Multimodal) ──
+      if (isImage) {
+        try {
+          const catalog = await this.fetchCatalogForOrg(req.organizationId!);
+          const extractedList = await extractQuestionFromImage(file.buffer, file.mimetype, catalog);
+
+          // Faz upload da imagem original para o storage do Supabase
+          const ext = file.originalname.split('.').pop() || 'png';
+          const visualKey = `img-${Date.now()}.${ext}`;
+          const visualUrl = await this.uploadVisual(req.organizationId!, job.id, visualKey, file.buffer);
+
+          const inserted: any[] = [];
+          for (const [index, q] of extractedList.entries()) {
+            const images = visualUrl
+              ? [
+                  {
+                    url: visualUrl,
+                    caption: `Imagem da questão: ${file.originalname}`,
+                    source: 'image-upload',
+                  },
+                ]
+              : [];
+
+            const { data: created, error: qErr } = await supabase
+              .from('questions')
+              .insert({
+                id: randomUUID(),
+                organizationId: req.organizationId!,
+                importJobId: job.id,
+                createdBy: req.userId!,
+                number: q.number ?? index + 1,
+                statement: q.statement,
+                alternatives: q.alternatives || [],
+                images,
+                gabarito: q.gabarito ?? null,
+                gabaritoOrigin: q.gabarito ? 'ai' : null,
+                gabaritoConfidence: q.gabarito ? 0.85 : null,
+                catalogItemId: q.catalogItemId ?? null,
+                classificationSource: q.classificationSource ?? null,
+                status: 'pending',
+                updatedAt: now,
+              })
+              .select('id, number, statement, alternatives, images, gabarito, gabaritoOrigin, catalogItemId, classificationSource, status')
+              .single();
+
+            if (qErr) {
+              console.error('[import:image] erro ao inserir questão:', JSON.stringify(qErr));
+            } else if (created) {
+              inserted.push(created);
+            }
+          }
+
+          await supabase
+            .from('import_jobs')
+            .update({
+              status: 'completed',
+              totalQuestions: inserted.length,
+              updatedAt: new Date().toISOString(),
+            })
+            .eq('id', job.id);
+
+          await logAudit({
+            organizationId: req.organizationId!,
+            userId: req.userId!,
+            action: 'create',
+            entityType: 'import_job',
+            entityId: job.id,
+            details: { fileName: file.originalname, totalQuestions: inserted.length, format: 'image' },
+          });
+
+          return res.status(201).json({ job, questions: inserted });
+        } catch (imgError: any) {
+          console.error('[import:image] falha ao processar imagem:', imgError);
+          await supabase
+            .from('import_jobs')
+            .update({
+              status: 'failed',
+              errorMessage: imgError?.message || 'Falha ao processar imagem com Gemini',
+              updatedAt: new Date().toISOString(),
+            })
+            .eq('id', job.id);
+          return res.status(500).json({ error: 'Falha ao extrair questões da imagem: ' + (imgError?.message || 'erro interno') });
+        }
+      }
+
+      // ── Processamento de PDF (B10, B11, B12, B13) ──
       try {
         const result = await extractQuestionsFromPdf(file.buffer);
         const catalog = await this.fetchCatalogForOrg(req.organizationId!);
@@ -63,7 +152,7 @@ export class ImportController {
           if (!regionByNumber.has(region.questionNumber)) regionByNumber.set(region.questionNumber, region);
         }
 
-        // Classificação assistida por IA (B13) — opcional, sequencial
+        // Classificação assistida por IA (B13)
         const inserted: any[] = [];
         for (const [index, q] of result.questions.entries()) {
           let suggestion: { catalogItemId: string | null; source: 'ai' | 'professor' | null; suggestedName?: string } | null = null;
@@ -102,9 +191,7 @@ export class ImportController {
               statement: q.statement,
               alternatives: q.alternatives.filter((a) => a.text.trim().length > 0),
               images,
-              // A origem vem do extrator, por questão. Palpite heurístico NUNCA
-              // é gravado como 'document' (B12).
-              gabarito: q.gabarito?.toUpperCase() ?? null,
+              gabarito: q.gabarito ? q.gabarito.toUpperCase() : null,
               gabaritoOrigin: q.gabarito ? q.gabaritoOrigin ?? 'heuristic' : null,
               gabaritoConfidence: q.gabarito ? q.gabaritoConfidence ?? 0.4 : null,
               catalogItemId: suggestion?.catalogItemId ?? null,

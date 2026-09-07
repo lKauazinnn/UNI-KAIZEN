@@ -74,7 +74,7 @@ export default function ExamResult() {
                     Sua resposta: <b className={isCorrect ? 'text-emerald-400' : 'text-red-400'}>{q.selected ?? '—'}</b>
                   </span>
                   <span className="text-slate-400">
-                    Gabarito: <b className="text-primary-300">{q.gabarito?.toUpperCase() ?? '—'}</b>
+                    Gabarito: <b className="text-primary-300">{q.gabarito ?? '—'}</b>
                   </span>
                 </div>
               </div>

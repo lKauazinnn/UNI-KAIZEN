@@ -33,7 +33,16 @@ export default function Questions() {
     api
       .get('/questions', { params })
       // A API devolve um array puro quando não há paginação.
-      .then(({ data }) => setQuestions(Array.isArray(data) ? data : data?.items ?? []))
+      .then(({ data }) => {
+        const list: Question[] = Array.isArray(data) ? data : data?.items ?? [];
+        list.sort((a, b) => {
+          if (a.number != null && b.number != null) return a.number - b.number;
+          if (a.number != null) return -1;
+          if (b.number != null) return 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        setQuestions(list);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   };

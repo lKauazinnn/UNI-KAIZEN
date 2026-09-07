@@ -11,8 +11,11 @@ import {
   BookOpen,
   Timer,
   UserCog,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const navPrimary = [
   { to: '/inicio', label: 'Início', icon: LayoutDashboard },
@@ -61,6 +64,7 @@ function SidebarItem({ to, label, icon: Icon }: { to: string; label: string; ico
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const isProfessor = user?.role === 'professor' || user?.role === 'admin';
 
@@ -115,6 +119,13 @@ export function Layout({ children }: { children: ReactNode }) {
               <p className="text-sm font-semibold text-slate-200 truncate">{user?.name}</p>
               <p className="text-xs text-slate-400 capitalize">{user?.roleDisplay ?? user?.role}</p>
             </div>
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              title={theme === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <button onClick={handleLogout} className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10" title="Sair">
               <LogOut size={18} />
             </button>
@@ -129,9 +140,18 @@ export function Layout({ children }: { children: ReactNode }) {
             <FlaskConical size={20} className="text-primary-400" />
             <span className="font-bold text-slate-100">Kaizen</span>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-1.5 text-slate-400 text-sm font-semibold">
-            <LogOut size={16} /> Sair
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-primary-500"
+              title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button onClick={handleLogout} className="flex items-center gap-1 text-slate-400 text-sm font-semibold">
+              <LogOut size={16} /> Sair
+            </button>
+          </div>
         </div>
       </div>
 

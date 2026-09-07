@@ -207,6 +207,24 @@ function extractGabaritoKey(text: string): Map<number, string> {
 
 // ─── Fatiamento em blocos de questão ──────────────────────────────────────
 
+const INSTRUCTION_PATTERNS = [
+  /tempo total para resolu[çc][ãa]o da prova/i,
+  /n[ãa]o [ée] permitido deixar o local/i,
+  /apenas caneta esferogr[áa]fica/i,
+  /caderno de quest[õo]es [ée] composto por/i,
+  /devolu[çc][ãa]o dos cadernos/i,
+  /aguarde o aviso para iniciar a prova/i,
+  /instru[çc][õo]es gerais/i,
+  /leia com aten[çc][ãa]o as instru[çc][õo]es/i,
+  /folha de respostas/i,
+  /ser[ãa]o divulgadas as m[ée]dias/i,
+  /preencha o cart[ãa]o-resposta/i,
+];
+
+function isInstructionBlock(text: string): boolean {
+  return INSTRUCTION_PATTERNS.some((p) => p.test(text));
+}
+
 function splitIntoQuestionBlocks(text: string): string[] {
   const lines = text.split(/\r?\n/);
   const blocks: string[] = [];
@@ -226,13 +244,19 @@ function splitIntoQuestionBlocks(text: string): string[] {
     // Nada depois do bloco de gabarito pertence a uma questão
     if (GABARITO_HEADER_RE.test(line.trim())) break;
     if (isQuestionStart(line)) {
-      if (current.length > 0) blocks.push(current.join('\n').trim());
+      if (current.length > 0) {
+        const blk = current.join('\n').trim();
+        if (!isInstructionBlock(blk)) blocks.push(blk);
+      }
       current = [line];
     } else {
       current.push(line);
     }
   }
-  if (current.length > 0) blocks.push(current.join('\n').trim());
+  if (current.length > 0) {
+    const blk = current.join('\n').trim();
+    if (!isInstructionBlock(blk)) blocks.push(blk);
+  }
   return blocks.filter((b) => b.length > 0);
 }
 

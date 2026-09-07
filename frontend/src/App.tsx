@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/ui';
 import Login from './pages/Login';
@@ -62,41 +63,43 @@ function HomeRedirect() {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<HomeRedirect />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route path="/inicio" element={<Protected><ProfessorOnly><ProfessorHome /></ProfessorOnly></Protected>} />
+            <Route path="/inicio" element={<Protected><ProfessorOnly><ProfessorHome /></ProfessorOnly></Protected>} />
 
-          <Route path="/professor/turmas" element={<Protected><ProfessorOnly><Classes /></ProfessorOnly></Protected>} />
-          <Route path="/professor/turmas/:id" element={<Protected><ProfessorOnly><ClassDetail /></ProfessorOnly></Protected>} />
-          <Route path="/professor/questoes" element={<Protected><ProfessorOnly><Questions /></ProfessorOnly></Protected>} />
-          <Route path="/professor/questoes/:id/revisar" element={<Protected><ProfessorOnly><QuestionReview /></ProfessorOnly></Protected>} />
-          <Route path="/professor/importar" element={<Protected><ProfessorOnly><ImportPdf /></ProfessorOnly></Protected>} />
-          <Route path="/professor/simulados" element={<Protected><ProfessorOnly><Exams /></ProfessorOnly></Protected>} />
-          <Route path="/professor/simulados/novo" element={<Protected><ProfessorOnly><ExamCreate /></ProfessorOnly></Protected>} />
-          <Route path="/professor/simulados/:id" element={<Protected><ProfessorOnly><ExamPreview /></ProfessorOnly></Protected>} />
-          <Route path="/professor/resultados" element={<Protected><ProfessorOnly><Results /></ProfessorOnly></Protected>} />
-          <Route path="/professor/catalogo" element={<Protected><ProfessorOnly><Catalogo /></ProfessorOnly></Protected>} />
+            <Route path="/professor/turmas" element={<Protected><ProfessorOnly><Classes /></ProfessorOnly></Protected>} />
+            <Route path="/professor/turmas/:id" element={<Protected><ProfessorOnly><ClassDetail /></ProfessorOnly></Protected>} />
+            <Route path="/professor/questoes" element={<Protected><ProfessorOnly><Questions /></ProfessorOnly></Protected>} />
+            <Route path="/professor/questoes/:id/revisar" element={<Protected><ProfessorOnly><QuestionReview /></ProfessorOnly></Protected>} />
+            <Route path="/professor/importar" element={<Protected><ProfessorOnly><ImportPdf /></ProfessorOnly></Protected>} />
+            <Route path="/professor/simulados" element={<Protected><ProfessorOnly><Exams /></ProfessorOnly></Protected>} />
+            <Route path="/professor/simulados/novo" element={<Protected><ProfessorOnly><ExamCreate /></ProfessorOnly></Protected>} />
+            <Route path="/professor/simulados/:id" element={<Protected><ProfessorOnly><ExamPreview /></ProfessorOnly></Protected>} />
+            <Route path="/professor/resultados" element={<Protected><ProfessorOnly><Results /></ProfessorOnly></Protected>} />
+            <Route path="/professor/catalogo" element={<Protected><ProfessorOnly><Catalogo /></ProfessorOnly></Protected>} />
 
-          <Route path="/admin/dashboard" element={<Protected><AdminOnly><AdminDashboard /></AdminOnly></Protected>} />
-          <Route path="/admin/usuarios" element={<Protected><AdminOnly><AdminUsuarios /></AdminOnly></Protected>} />
+            <Route path="/admin/dashboard" element={<Protected><AdminOnly><AdminDashboard /></AdminOnly></Protected>} />
+            <Route path="/admin/usuarios" element={<Protected><AdminOnly><AdminUsuarios /></AdminOnly></Protected>} />
 
-          <Route path="/aluno/inicio" element={<Protected><AlunoOnly><AlunoHome /></AlunoOnly></Protected>} />
-          <Route path="/aluno/simulados" element={<Protected><AlunoOnly><AlunoExams /></AlunoOnly></Protected>} />
-          <Route path="/aluno/simulados/:id/responder" element={<Protected><AlunoOnly><TakeExam /></AlunoOnly></Protected>} />
-          <Route path="/aluno/simulados/:id/resultado" element={<Protected><AlunoOnly><ExamResult /></AlunoOnly></Protected>} />
-          <Route path="/aluno/resultados" element={<Protected><AlunoOnly><AlunoResults /></AlunoOnly></Protected>} />
-          <Route path="/aluno/turmas" element={<Protected><AlunoOnly><AlunoTurmas /></AlunoOnly></Protected>} />
+            <Route path="/aluno/inicio" element={<Protected><AlunoOnly><AlunoHome /></AlunoOnly></Protected>} />
+            <Route path="/aluno/simulados" element={<Protected><AlunoOnly><AlunoExams /></AlunoOnly></Protected>} />
+            <Route path="/aluno/simulados/:id/responder" element={<Protected><AlunoOnly><TakeExam /></AlunoOnly></Protected>} />
+            <Route path="/aluno/simulados/:id/resultado" element={<Protected><AlunoOnly><ExamResult /></AlunoOnly></Protected>} />
+            <Route path="/aluno/resultados" element={<Protected><AlunoOnly><AlunoResults /></AlunoOnly></Protected>} />
+            <Route path="/aluno/turmas" element={<Protected><AlunoOnly><AlunoTurmas /></AlunoOnly></Protected>} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
