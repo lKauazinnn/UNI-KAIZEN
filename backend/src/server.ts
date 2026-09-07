@@ -108,6 +108,14 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
     }
     return res.status(400).json({ error: err.message });
   }
+  // Erros do express.json(): sem isso um corpo malformado cai no 500 generico
+  // abaixo e vira ruido de log, como se o servidor tivesse falhado.
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido no corpo da requisição.' });
+  }
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Corpo da requisição excede o limite.' });
+  }
   if (err instanceof CorsError) {
     return res.status(403).json({ error: err.message });
   }
