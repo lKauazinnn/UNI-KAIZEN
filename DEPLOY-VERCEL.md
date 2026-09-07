@@ -1,5 +1,38 @@
 # Deploy na Vercel
 
+## Estado atual (já no ar)
+
+| | URL | Projeto na Vercel | Deploy automático no `git push`? |
+| --- | --- | --- | --- |
+| Frontend | https://plataforma-kaizen.vercel.app | `plataforma-kaizen` | **Sim** (conectado ao GitHub) |
+| API | https://kaizen-api-eight.vercel.app | `kaizen-api` | **Não** — veja abaixo |
+
+> **A API não está conectada ao Git.** Ela foi criada e publicada pela CLI, então
+> `git push` **atualiza só o frontend**. Para atualizar a API depois de mexer no
+> `backend/`, rode:
+>
+> ```bash
+> cd backend && npx vercel deploy --prod
+> ```
+>
+> Para ligar o deploy automático: no dashboard do projeto `kaizen-api` →
+> **Settings → Git** conecte o repositório e, em **Settings → Build and Deployment**,
+> defina **Root Directory** = `backend`. Sem o Root Directory a build tenta rodar
+> na raiz do repositório e falha.
+
+### Pendências conhecidas
+
+- **IA desligada.** `GEMINI_API_KEY` e `GROQ_API_KEY` estão vazias, então não há
+  classificação automática de questões nem importação a partir de imagem (esta
+  última depende exclusivamente da Gemini). Para ligar:
+  `cd backend && npx vercel env add GEMINI_API_KEY production` e redeploy.
+- **`OWNER_EMAIL` vazia**, então nenhum e-mail é tratado como admin/root.
+- **Supabase → Authentication → URL Configuration** ainda precisa apontar para o
+  domínio de produção (passo 5), senão a recuperação de senha manda link para
+  `localhost`.
+
+---
+
 ## Arquitetura
 
 São **dois projetos** na Vercel, ambos apontando para o mesmo repositório do
@@ -8,15 +41,15 @@ GitHub, cada um com um **Root Directory** diferente:
 | Projeto | Root Directory | O que é |
 | --- | --- | --- |
 | `kaizen-api` | `backend` | O Express roda como uma Serverless Function (`api/index.ts`). Todas as rotas são reescritas para ela pelo `backend/vercel.json`. |
-| `kaizen-web` | `frontend` | SPA Vite servida como estático, com rewrite de SPA para o `index.html`. |
+| `plataforma-kaizen` | `frontend` | SPA Vite servida como estático, com rewrite de SPA para o `index.html`. |
 
 O frontend fala com a API por **CORS**, usando a variável `VITE_API_URL`
 (embutida no build). O token vai no header `Authorization: Bearer`, não em
 cookie — por isso não há dependência de `SameSite`/domínio compartilhado.
 
 ```
-navegador ──► kaizen-web.vercel.app        (estático)
-          └─► kaizen-api.vercel.app/api/*  (function, CORS liberado p/ o domínio do web)
+navegador ──► plataforma-kaizen.vercel.app        (estático)
+          └─► kaizen-api-eight.vercel.app/api/*  (function, CORS liberado p/ o domínio do web)
                     └─► Supabase (PostgREST + Storage)
 ```
 
@@ -61,18 +94,18 @@ git push origin main
 > `NODE_ENV=production` **não** precisa ser definida: a Vercel já a define, e é
 > ela que desliga o endpoint `/debug`.
 
-5. **Deploy**. Anote a URL gerada (ex.: `https://kaizen-api.vercel.app`).
+5. **Deploy**. Anote a URL gerada (ex.: `https://kaizen-api-eight.vercel.app`).
 
 Teste imediatamente:
 
 ```bash
-curl https://kaizen-api.vercel.app/health
+curl https://kaizen-api-eight.vercel.app/health
 # {"status":"ok","message":"Server is running"}
 ```
 
 ---
 
-## 3. Criar o projeto do frontend (`kaizen-web`)
+## 3. Criar o projeto do frontend (`plataforma-kaizen`)
 
 1. **Add New… → Project** → mesmo repositório.
 2. Em **Root Directory**, escolha `frontend`.
@@ -81,14 +114,14 @@ curl https://kaizen-api.vercel.app/health
 
 | Variável | Obrigatória | Valor |
 | --- | --- | --- |
-| `VITE_API_URL` | **sim** | `https://kaizen-api.vercel.app/api` — **com o sufixo `/api`** |
+| `VITE_API_URL` | **sim** | `https://kaizen-api-eight.vercel.app/api` — **com o sufixo `/api`** |
 | `VITE_SUPABASE_URL` | não | Project URL do Supabase (só para recuperação de senha) |
 | `VITE_SUPABASE_ANON_KEY` | não | `anon` key |
 
 > Variáveis `VITE_*` são embutidas no bundle **em build time**. Mudar o valor
 > exige um **Redeploy** — não basta salvar.
 
-5. **Deploy**. Anote a URL (ex.: `https://kaizen-web.vercel.app`).
+5. **Deploy**. Anote a URL (ex.: `https://plataforma-kaizen.vercel.app`).
 
 ---
 
@@ -97,13 +130,13 @@ curl https://kaizen-api.vercel.app/health
 Volte no projeto **`kaizen-api`** → Settings → Environment Variables e defina:
 
 ```
-FRONTEND_URL = https://kaizen-web.vercel.app
+FRONTEND_URL = https://plataforma-kaizen.vercel.app
 ```
 
 Sem barra no final. Aceita lista separada por vírgula, se houver domínio próprio:
 
 ```
-FRONTEND_URL = https://kaizen-web.vercel.app,https://kaizen.cajupar.com
+FRONTEND_URL = https://plataforma-kaizen.vercel.app,https://kaizen.cajupar.com
 ```
 
 Depois **Redeploy** o projeto da API (variável de runtime só entra em vigor no
@@ -118,8 +151,8 @@ próximo deploy).
 
 Supabase → **Authentication → URL Configuration**:
 
-- **Site URL**: `https://kaizen-web.vercel.app`
-- **Redirect URLs**: `https://kaizen-web.vercel.app/reset-password`
+- **Site URL**: `https://plataforma-kaizen.vercel.app`
+- **Redirect URLs**: `https://plataforma-kaizen.vercel.app/reset-password`
 
 Sem isso o e-mail de redefinição não é enviado, ou aponta para `localhost`.
 
@@ -128,8 +161,8 @@ Sem isso o e-mail de redefinição não é enviado, ou aponta para `localhost`.
 ## 6. Verificação ponta a ponta
 
 ```bash
-API=https://kaizen-api.vercel.app
-WEB=https://kaizen-web.vercel.app
+API=https://kaizen-api-eight.vercel.app
+WEB=https://plataforma-kaizen.vercel.app
 
 # 1. A function está viva
 curl -s $API/health
@@ -149,6 +182,21 @@ curl -s -H "Origin: https://origem-estranha.example" $API/api/imports
 
 No navegador: abra o `$WEB`, faça login e recarregue a página em uma rota interna
 (ex.: `/professor/resultados`) — o rewrite de SPA deve devolver a aplicação, não 404.
+
+---
+
+## Por que a API tem um `public/robots.txt`
+
+Como o `backend/package.json` tem script `build`, a Vercel roda o build e depois
+exige um diretório de saída estático — que um projeto só-de-API não produz. O
+deploy falha com *"No Output Directory named public found"*.
+
+Apontar `outputDirectory` para `dist` resolveria o erro, mas serviria o código
+compilado como arquivo estático público. E um `public/` vazio também é recusado
+(*"The Output Directory public is empty"*). Por isso o `buildCommand` gera um
+`public/` contendo apenas um `robots.txt`: diretório não-vazio, nenhum código
+servido, e sem `index.html` para não sombrear a rota `/` da API — que continua
+caindo no rewrite para a function.
 
 ---
 
@@ -186,7 +234,7 @@ o `listen()` só é suprimido quando a variável `VERCEL` está presente.
 | --- | --- | --- |
 | Erro de CORS no console do navegador | `FRONTEND_URL` na API diferente do domínio real do frontend (barra no fim conta) | Ajuste `FRONTEND_URL` e **redeploy da API**. O log da function mostra `[cors] origem bloqueada: …` com a origem recebida |
 | Toda chamada dá 404 e o console mostra `[api] VITE_API_URL não foi definida` | `VITE_API_URL` ausente no build | Defina no projeto web e **redeploy** (é build time) |
-| Chamadas vão para `…/auth/login` sem `/api` | `VITE_API_URL` sem o sufixo `/api` | Use `https://kaizen-api.vercel.app/api` |
+| Chamadas vão para `…/auth/login` sem `/api` | `VITE_API_URL` sem o sufixo `/api` | Use `https://kaizen-api-eight.vercel.app/api` |
 | 500 em toda rota, log com `variáveis de ambiente obrigatórias ausentes` | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` não cadastradas | Cadastre e redeploy |
 | 413 ao importar | arquivo acima de ~4,5 MB | Divida o PDF (veja Limitações #1) |
 | `FUNCTION_INVOCATION_TIMEOUT` na importação | PDF grande estourando 60 s | Divida o PDF ou mova a API para host de processo longo (Limitações #2) |
