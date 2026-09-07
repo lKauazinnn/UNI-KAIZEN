@@ -8,3 +8,5 @@ Thumbs.db
 pdf_extracted.txt
 backend/src/env
 frontend/src/env
+.vercel
+.env*
