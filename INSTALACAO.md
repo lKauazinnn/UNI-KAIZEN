@@ -38,7 +38,10 @@ Edite o `.env`:
 | `JWT_SECRET` | Sim | Segredo longo para o token da aplicação |
 | `JWT_EXPIRES_IN` | Não | Padrão `7d` |
 | `FRONTEND_URL` | Não | Padrão `http://localhost:5173` |
-| `GROQ_API_KEY` | Não | Habilita classificação automática (B13) |
+| `GEMINI_API_KEY` | Não | Habilita classificação automática (B13) e a importação de questões por imagem. Tem prioridade sobre a Groq |
+| `GROQ_API_KEY` | Não | Alternativa de IA, só para classificação de texto (B13) |
+| `UPLOAD_MAX_MB` | Não | Padrão `4`. Teto do arquivo na importação (limite da Vercel) |
+| `ALLOW_VERCEL_PREVIEW_ORIGINS` | Não | `true` libera CORS para qualquer `*.vercel.app` |
 | `OWNER_EMAIL` | Não | Email tratado como admin/root |
 
 \* Necessária apenas para comandos do Prisma (`prisma generate` já roda no `postinstall`).
@@ -63,7 +66,7 @@ Edite o `.env`:
 
 | Variável | Obrigatório | Descrição |
 | --- | --- | --- |
-| `VITE_API_URL` | Não | Vazio = usa `/api` (padrão dev via proxy) ou `/_/backend/api` (produção Vercel) |
+| `VITE_API_URL` | Em produção, **sim** | Vazio = usa `/api` (dev, via proxy do Vite). Em build de produção precisa da URL pública da API **+ `/api`** |
 | `VITE_SUPABASE_URL` | Não | Usado apenas para recuperação de senha/links do Supabase |
 | `VITE_SUPABASE_ANON_KEY` | Não | Idem |
 
@@ -85,26 +88,24 @@ O teste usa o UUID **`e2e-`** no slug de organizações e telefones, criando dad
 
 ## Deploy (Vercel)
 
-São **dois projetos** na Vercel, cada um com seu `vercel.json`:
+O passo a passo completo — criação dos dois projetos, tabela de variáveis,
+verificação por curl, limitações da plataforma e troubleshooting — está em
+[DEPLOY-VERCEL.md](DEPLOY-VERCEL.md).
 
-**Backend** — `backend/vercel.json` usa o builder `@vercel/node` sobre `src/server.ts`
-e encaminha todas as rotas para ele.
+Resumo:
 
-1. Crie um projeto apontando para a pasta `backend`.
-2. Defina as mesmas variáveis de ambiente do `backend/.env` no projeto.
-3. Defina `NODE_ENV=production` — isso desativa o endpoint `/debug`.
+- **Dois projetos** no mesmo repositório, separados por **Root Directory**:
+  `backend` (API) e `frontend` (SPA).
+- A API roda como Serverless Function: `backend/api/index.ts` exporta o app do
+  Express e `backend/vercel.json` reescreve todas as rotas para ela. O
+  `listen()` do `src/server.ts` é suprimido quando a variável `VERCEL` existe,
+  então o mesmo arquivo continua servindo para rodar como processo normal.
+- O frontend precisa de `VITE_API_URL` = URL pública da API **+ `/api`**, e a
+  API precisa de `FRONTEND_URL` = URL pública do frontend (é o que libera o CORS).
 
-**Frontend** — `frontend/vercel.json` define o build Vite e o rewrite de SPA
-(`/(.*) → /index.html`). Sem esse rewrite, recarregar a página em qualquer rota
-interna (ex.: `/professor/resultados`) devolve 404.
-
-1. Crie um projeto apontando para a pasta `frontend`.
-2. Defina `VITE_API_URL` com a URL pública do backend (ex.: `https://kaizen-api.vercel.app/api`).
-   Em desenvolvimento a variável fica **vazia** e o Vite faz proxy de `/api` para `localhost:3333`.
-3. Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
-
-> **Atenção — importação de PDF em produção.** O processamento do PDF é síncrono
-> (renderiza as páginas e chama a IA questão a questão dentro do request). Em
-> funções serverless isso estoura o tempo limite em provas grandes. Para o piloto,
-> aumente `maxDuration` na função do backend ou rode a API num host de processo
-> longo (Railway, Render, Fly).
+> **Atenção — importação de PDF em produção.** O processamento é síncrono
+> (renderiza as páginas e chama a IA questão a questão dentro do request), e a
+> Vercel impõe dois tetos: **~4,5 MB** de corpo de requisição e **60 s** de
+> execução no plano Hobby. Provas grandes não passam. Para o piloto, divida o
+> PDF; para uso real, mova a API para um host de processo longo (Railway,
+> Render, Fly) ou passe a importação para uma fila em background.

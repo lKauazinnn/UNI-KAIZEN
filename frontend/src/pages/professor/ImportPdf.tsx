@@ -119,7 +119,7 @@ export default function ImportPdf() {
             <FileUp size={40} className="text-primary-400" />
           </div>
           <p className="font-bold text-slate-100 mb-1">Arraste um PDF ou Imagem de questões aqui</p>
-          <p className="text-sm text-slate-400 mb-4">PDF, PNG, JPG ou WebP (máx. 20 MB)</p>
+          <p className="text-sm text-slate-400 mb-4">PDF, PNG, JPG ou WebP (máx. 4 MB)</p>
           <input ref={inputRef} type="file" accept=".pdf,application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={onSelect} />
         </div>
       )}

@@ -2,11 +2,11 @@
   "name": "kaizen-backend",
   "version": "1.0.0",
   "description": "Backend da plataforma Kaizen Laboratórios Educacionais",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

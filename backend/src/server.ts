@@ -13,16 +13,54 @@ import noticeRoutes from './routes/notice.routes';
 import auditRoutes from './routes/audit.routes';
 import adminRoutes from './routes/admin.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import { MAX_UPLOAD_MB } from './controllers/import.controller';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3333;
 
+// Na Vercel o app roda como Serverless Function (api/index.ts) e não pode
+// chamar listen(); localmente ele sobe um servidor de processo normal.
+const IS_SERVERLESS = Boolean(process.env.VERCEL);
+
+class CorsError extends Error {
+  constructor(public origin: string) {
+    super(`Origem não permitida pelo CORS: ${origin}`);
+    this.name = 'CorsError';
+  }
+}
+
+// ─── CORS ─────────────────────────────────────────────────────────────────
+// FRONTEND_URL aceita uma lista separada por vírgula. Vazio = libera tudo
+// (conveniente em dev; em produção defina a URL pública do frontend).
+const allowedOrigins = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+// Cada deploy de preview da Vercel tem um subdomínio novo, então a lista fixa
+// nunca bate. Ligue esta flag só se precisar testar previews no navegador —
+// a API exige Bearer token e não usa cookies, mas ainda assim fica mais larga.
+const allowVercelPreviews = process.env.ALLOW_VERCEL_PREVIEW_ORIGINS === 'true';
+const VERCEL_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : '*',
+  origin(origin, callback) {
+    // Sem Origin: curl, health check, chamada server-to-server.
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0) return callback(null, true);
+
+    const normalized = origin.replace(/\/+$/, '');
+    if (allowedOrigins.includes(normalized)) return callback(null, true);
+    if (allowVercelPreviews && VERCEL_PREVIEW_RE.test(normalized)) return callback(null, true);
+
+    console.warn(`[cors] origem bloqueada: ${origin} (permitidas: ${allowedOrigins.join(', ') || 'todas'})`);
+    return callback(new CorsError(origin));
+  },
   credentials: true,
 }));
+
 app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/auth', authRoutes);
@@ -64,13 +102,20 @@ if (process.env.NODE_ENV !== 'production') {
 // Tratamento de erro central
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof MulterError) {
+    // LIMIT_FILE_SIZE tem mensagem genérica ("File too large"); explicitamos o teto.
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `Arquivo muito grande. O limite é ${MAX_UPLOAD_MB} MB por upload.` });
+    }
     return res.status(400).json({ error: err.message });
+  }
+  if (err instanceof CorsError) {
+    return res.status(403).json({ error: err.message });
   }
   console.error('[server] erro:', err);
   return res.status(500).json({ error: 'Erro interno do servidor' });
 });
 
-if (process.env.NODE_ENV !== 'production') {
+if (!IS_SERVERLESS) {
   app.listen(PORT, () => {
     console.log(`🚀 Kaizen API running on http://localhost:${PORT}`);
   });

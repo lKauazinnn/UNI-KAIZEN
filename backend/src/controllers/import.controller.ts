@@ -11,9 +11,15 @@ import { logAudit } from '../lib/audit';
 
 const VISUAL_BUCKET = 'question-visuals';
 
+// A Vercel corta o corpo da requisição em ~4,5 MB antes de ela chegar na
+// function, então um teto maior só geraria um 413 opaco da plataforma em vez de
+// um erro nosso. Fora da Vercel (Railway/Render/processo local) é seguro elevar
+// via UPLOAD_MAX_MB.
+export const MAX_UPLOAD_MB = Number(process.env.UPLOAD_MAX_MB) || 4;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const isPdf = /pdf/i.test(file.mimetype) || /\.pdf$/i.test(file.originalname);
     const isImage = /image\/(png|jpe?g|webp)/i.test(file.mimetype) || /\.(png|jpe?g|webp)$/i.test(file.originalname);

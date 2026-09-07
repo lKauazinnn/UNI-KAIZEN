@@ -1,9 +1,17 @@
 import axios from 'axios';
 
-const PROD = import.meta.env.PROD;
+// Em produção a API vive em outro deploy da Vercel, então VITE_API_URL precisa
+// apontar para ela (ex.: https://kaizen-api.vercel.app/api). Em desenvolvimento
+// a variável fica vazia e o proxy do Vite encaminha /api para localhost:3333.
+if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
+  console.error(
+    '[api] VITE_API_URL não foi definida neste build de produção. ' +
+      'As chamadas cairão em /api no próprio domínio do frontend e vão falhar.'
+  );
+}
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || (PROD ? '/_/backend/api' : '/api'),
+  baseURL: import.meta.env.VITE_API_URL || '/api',
 });
 
 api.interceptors.request.use((config) => {
