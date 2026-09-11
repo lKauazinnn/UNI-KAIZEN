@@ -116,18 +116,15 @@ export class AuthController {
       }
       const organizationId = org.id;
 
-      // B03/B04: só o fundador da organização entra como professor. Quem se
-      // registra numa organização que já existe entra como aluno — professores
-      // adicionais são criados pelo admin. Sem isso, saber o slug bastaria para
-      // virar professor de qualquer instituição e ler todo o banco de questões.
+      // O cadastro público aceita estritamente os dois perfis do produto. O
+      // administrador continua reservado ao proprietário configurado no
+      // ambiente, mas não pode ser escolhido no formulário.
       const shouldBeAdmin = isOwnerEmail(email);
       let role: UserRole;
       if (shouldBeAdmin) {
         role = 'admin';
-      } else if (org.created) {
-        role = requestedRole;
       } else {
-        role = 'aluno';
+        role = requestedRole;
       }
       const hashedPassword = await bcrypt.hash(parsed.password, 10);
       const now = new Date().toISOString();
@@ -271,8 +268,6 @@ export class AuthController {
 
       if (user) {
         try {
-          await ensureSupabaseAuthUser(user.email, 'RecomecoKaizen!2026', user.name);
-
           const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
           const redirectTo = `${frontendUrl.replace(/\/$/, '')}/reset-password`;
 

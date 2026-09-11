@@ -8,9 +8,8 @@ import { logAudit } from '../lib/audit';
 
 const createClassSchema = z.object({ name: z.string().min(2, 'Nome da turma muito curto') });
 const renameClassSchema = z.object({ name: z.string().min(2, 'Nome da turma muito curto') });
-const linkStudentSchema = z.object({ email: z.string().email('Email inválido'), name: z.string().optional() });
+const linkStudentSchema = z.object({ userId: z.string().uuid().optional(), email: z.string().email('Email inválido').optional() }).refine((data) => data.userId || data.email, 'Selecione um aluno');
 const csvImportSchema = z.object({ students: z.string().min(1, 'Nenhum aluno no CSV') });
-const decisionSchema = z.object({ approve: z.boolean() });
 
 const TEMP_PASSWORD_PREFIX = 'kaizen!'; // senha inicial para alunos criados por CSV
 
@@ -47,12 +46,9 @@ export class ClassController {
       const orgId = req.organizationId!;
 
       if (isProfessor) {
-        const { data, error } = await supabase
-          .from('turmas')
-          .select('*')
-          .eq('organizationId', orgId)
-          .eq('professorId', req.userId!)
-          .order('createdAt', { ascending: false });
+        let classesQuery = supabase.from('turmas').select('*').eq('organizationId', orgId);
+        if (req.userRole !== 'admin') classesQuery = classesQuery.eq('professorId', req.userId!);
+        const { data, error } = await classesQuery.order('createdAt', { ascending: false });
         if (error) return res.status(500).json({ error: 'Erro ao listar turmas' });
         return res.json(data ?? []);
       }
@@ -71,6 +67,7 @@ export class ClassController {
       const { data, error } = await supabase
         .from('turmas')
         .select('*')
+        .eq('organizationId', orgId)
         .in('id', ids)
         .order('createdAt', { ascending: false });
       if (error) return res.status(500).json({ error: 'Erro ao listar turmas' });
@@ -94,7 +91,7 @@ export class ClassController {
 
       const isProfessor = turma.professorId === req.userId || req.userRole === 'admin';
 
-      // Professor: membros e solicitações. Aluno: apenas confirma participação.
+      // Professor: membros da turma. Aluno: apenas confirma participação.
       if (isProfessor) {
         const { data: members, error: mErr } = await supabase
           .from('turma_members')
@@ -173,21 +170,23 @@ export class ClassController {
   async linkStudent(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { email, name } = linkStudentSchema.parse(req.body);
-      const normalized = email.trim().toLowerCase();
+      const { userId, email } = linkStudentSchema.parse(req.body);
+      const normalized = email?.trim().toLowerCase();
       const ok = await this.assertOwnership(req, id, res);
       if (!ok) return;
 
-      // Aluno já existe NA MESMA organização? (B04: sem o filtro dava para
-      // vincular aluno de outra instituição e enumerar emails globalmente)
-      let { data: student } = await supabase
-        .from('users')
-        .select('id, name, email, role')
-        .eq('email', normalized)
-        .eq('organizationId', req.organizationId!)
-        .maybeSingle();
+      const { data: activeClass } = await supabase.from('turmas').select('archived').eq('id', id).single();
+      if (activeClass?.archived) return res.status(400).json({ error: 'Não é possível vincular aluno a uma turma arquivada' });
 
-      if (student && student.role === 'aluno') {
+      // A turma é vinculada a um aluno já cadastrado e pesquisado dentro da
+      // organização. Isso elimina solicitação pendente e evita criar usuários
+      // com credenciais temporárias no meio do fluxo principal.
+      let studentQuery = supabase.from('users').select('id, name, email, role').eq('organizationId', req.organizationId!).eq('role', 'aluno');
+      if (userId) studentQuery = studentQuery.eq('id', userId);
+      else studentQuery = studentQuery.eq('email', normalized!);
+      const { data: student } = await studentQuery.maybeSingle();
+
+      if (student) {
         const { data: existing } = await supabase
           .from('turma_members')
           .select('id')
@@ -196,46 +195,47 @@ export class ClassController {
           .maybeSingle();
         if (existing) return res.status(400).json({ error: 'Aluno já vinculado a essa turma' });
 
-        await this.addMember(req, id, student.id, 'ativo');
+        const member = await this.addMember(req, id, student.id, 'ativo');
+        if (!member) return res.status(500).json({ error: 'Não foi possível criar o vínculo' });
         return res.status(201).json({ student });
       }
 
-      if (student && student.role !== 'aluno') {
-        return res.status(400).json({ error: 'Esse email pertence a um professor/administrador' });
-      }
-
-      // Não existe → cria aluno com senha temporária
-      const tempPassword = TEMP_PASSWORD_PREFIX + Math.random().toString(36).slice(2, 8);
-      const hashed = await bcrypt.hash(tempPassword, 10);
-
-      const { data: created, error } = await supabase
-        .from('users')
-        .insert({
-          id: randomUUID(),
-          name: name ?? normalized.split('@')[0],
-          email: normalized,
-          password: hashed,
-          role: 'aluno',
-          isActive: true,
-          organizationId: req.organizationId!,
-          updatedAt: new Date().toISOString(),
-        })
-        .select('id, name, email, role')
-        .single();
-
-      if (error || !created) {
-        console.error('Erro ao criar aluno:', JSON.stringify(error));
-        return res.status(500).json({ error: 'Erro ao vincular aluno' });
-      }
-
-      await this.addMember(req, id, created.id, 'ativo');
-      // NUNCA gravar a senha em claro no log — a auditoria é legível por professores.
-      await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'create', entityType: 'user', entityId: created.id, details: { via: 'link', email } });
-      return res.status(201).json({ student: created, tempPassword });
+      return res.status(404).json({ error: 'Aluno não encontrado. Cadastre o aluno antes de vinculá-lo.' });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors[0].message });
       console.error(error);
       return res.status(500).json({ error: 'Erro ao vincular aluno' });
+    }
+  }
+
+  async searchStudents(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const ok = await this.assertOwnership(req, id, res);
+      if (!ok) return;
+
+      const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      if (query.length < 2) return res.json([]);
+      const safeQuery = query.replace(/[%,()]/g, ' ').trim();
+      if (safeQuery.length < 2) return res.json([]);
+
+      const { data: linked } = await supabase.from('turma_members').select('userId').eq('turmaId', id);
+      const linkedIds = (linked ?? []).map((member) => member.userId);
+      let studentsQuery = supabase
+        .from('users')
+        .select('id, name, email, role')
+        .eq('organizationId', req.organizationId!)
+        .eq('role', 'aluno')
+        .or(`name.ilike.%${safeQuery}%,email.ilike.%${safeQuery}%`)
+        .order('name', { ascending: true })
+        .limit(20);
+      if (linkedIds.length > 0) studentsQuery = studentsQuery.not('id', 'in', `(${linkedIds.join(',')})`);
+      const { data, error } = await studentsQuery;
+      if (error) return res.status(500).json({ error: 'Erro ao pesquisar alunos' });
+      return res.json(data ?? []);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao pesquisar alunos' });
     }
   }
 
@@ -343,88 +343,6 @@ export class ClassController {
     }
   }
 
-  // ─── Solicitações de vínculo (B07) ──────────────────────────────────
-  async requestLink(req: AuthRequest, res: Response) {
-    try {
-      const { id } = req.params;
-      const { data: turma, error } = await supabase.from('turmas').select('*').eq('id', id).single();
-      if (error || !turma) return res.status(404).json({ error: 'Turma não encontrada' });
-      if (turma.organizationId !== req.organizationId) return res.status(404).json({ error: 'Turma não encontrada' });
-
-      const { data: existing } = await supabase
-        .from('turma_members')
-        .select('status')
-        .eq('turmaId', id)
-        .eq('userId', req.userId!)
-        .maybeSingle();
-      if (existing) return res.status(400).json({ error: existing.status === 'pendente' ? 'Solicitação já enviada e em análise' : 'Você já participa dessa turma' });
-
-      await this.addMember(req, id, req.userId!, 'pendente');
-      await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'request', entityType: 'turma_member', entityId: id });
-      return res.status(201).json({ ok: true, message: 'Solicitação enviada para o professor' });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({ error: 'Erro ao solicitar vínculo' });
-    }
-  }
-
-  async pendingRequests(req: AuthRequest, res: Response) {
-    try {
-      const { id } = req.params;
-      const ok = await this.assertOwnership(req, id, res);
-      if (!ok) return;
-
-      const { data, error } = await supabase
-        .from('turma_members')
-        .select('*, users(id, name, email)')
-        .eq('turmaId', id)
-        .eq('status', 'pendente')
-        .order('createdAt', { ascending: true });
-      if (error) return res.status(500).json({ error: 'Erro ao buscar solicitações' });
-      return res.json(data ?? []);
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({ error: 'Erro ao buscar solicitações' });
-    }
-  }
-
-  async decideRequest(req: AuthRequest, res: Response) {
-    try {
-      const { id, memberId } = req.params;
-      const { approve } = decisionSchema.parse(req.body);
-      const ok = await this.assertOwnership(req, id, res);
-      if (!ok) return;
-
-      const { data: member } = await supabase
-        .from('turma_members')
-        .select('userId')
-        .eq('id', memberId)
-        .eq('turmaId', id)
-        .single();
-      if (!member) return res.status(404).json({ error: 'Solicitação não encontrada' });
-
-      if (approve) {
-        const { data, error } = await supabase
-          .from('turma_members')
-          .update({ status: 'ativo', updatedAt: new Date().toISOString() })
-          .eq('id', memberId)
-          .select()
-          .single();
-        if (error || !data) return res.status(500).json({ error: 'Erro ao aprovar solicitação' });
-        await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'approve', entityType: 'turma_member', entityId: member.userId });
-        return res.json(data);
-      }
-
-      await supabase.from('turma_members').delete().eq('id', memberId);
-      await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'reject', entityType: 'turma_member', entityId: member.userId });
-      return res.json({ ok: true });
-    } catch (error) {
-      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors[0].message });
-      console.error(error);
-      return res.status(500).json({ error: 'Erro ao decidir solicitação' });
-    }
-  }
-
   // ─── Helpers ────────────────────────────────────────────────────────
   private async assertOwnership(req: AuthRequest, turmaId: string, res: Response): Promise<boolean> {
     const { data: turma } = await supabase
@@ -447,11 +365,15 @@ export class ClassController {
 
   private async addMember(req: AuthRequest, turmaId: string, userId: string, status: string) {
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('turma_members')
       .insert({ id: randomUUID(), turmaId, userId, status, updatedAt: now })
       .select()
       .single();
+    if (error) {
+      console.error('Erro ao criar membro:', JSON.stringify(error));
+      return null;
+    }
     return data;
   }
 }

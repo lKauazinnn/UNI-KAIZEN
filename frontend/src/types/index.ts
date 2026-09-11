@@ -48,6 +48,7 @@ export interface CatalogItem {
   name: string;
   parentId: string | null;
   topics?: CatalogItem[];
+  contents?: CatalogItem[];
   subtopics?: CatalogItem[];
 }
 
@@ -83,6 +84,7 @@ export interface Question {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string | null;
   catalog_items?: { id: string; name: string; level: number } | null;
+  taxonomy?: Array<{ level: number; name: string }>;
   createdAt: string;
 }
 
@@ -165,6 +167,8 @@ export interface MyResult {
   questions: Array<{
     number?: number | null;
     statement: string;
+    alternatives?: Alternative[];
+    images?: QuestionImage[];
     gabarito?: string | null;
     selected?: string | null;
     isCorrect?: boolean | null;

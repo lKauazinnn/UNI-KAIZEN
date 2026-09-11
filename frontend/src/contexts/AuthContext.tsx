@@ -10,7 +10,7 @@ interface AuthContextValue {
   isAluno: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { name: string; email: string; password: string; role: string; organizationSlug: string }) => Promise<void>;
+  register: (data: { name: string; email: string; password: string; role: string; organizationSlug: string }) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -73,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_TOKEN, data.token);
     localStorage.setItem(STORAGE_USER, JSON.stringify(data.user));
     setUser(data.user);
+    return data.user as User;
   };
 
   const logout = async () => {

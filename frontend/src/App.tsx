@@ -55,10 +55,10 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 function HomeRedirect() {
-  const { isAuthenticated, loading, isProfessor } = useAuth();
+  const { isAuthenticated, loading, isProfessor, isAdmin } = useAuth();
   if (loading) return <Spinner label="Carregando..." />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <Navigate to={isProfessor ? '/inicio' : '/aluno/inicio'} replace />;
+  return <Navigate to={isAdmin ? '/admin/dashboard' : isProfessor ? '/inicio' : '/aluno/inicio'} replace />;
 }
 
 function App() {

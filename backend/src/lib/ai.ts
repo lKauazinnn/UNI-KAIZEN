@@ -55,8 +55,8 @@ export async function classifyQuestion(
         config: {
           temperature: 0.1,
           systemInstruction:
-            'Você classifica questões de provas em um catálogo educativo com níveis: disciplina (1), tópico (2) e subtópico (3). ' +
-            'Responda APENAS com JSON no formato {"level": 1|2|3, "match": "nome exato do item do catálogo"} ' +
+             'Você classifica questões de provas em um catálogo educativo com níveis: disciplina (1), conteúdo (2), tópico (3) e subtópico (4). ' +
+             'Responda APENAS com JSON no formato {"level": 1|2|3|4, "match": "nome exato do item do catálogo"} ' +
             'escolhendo o nível mais específico que fizer sentido. Se nada casar, retorne {"level": null, "match": null}.',
           responseMimeType: 'application/json',
         },
@@ -92,8 +92,8 @@ export async function classifyQuestion(
           {
             role: 'system',
             content:
-              'Você classifica questões de provas em um catálogo educativo com níveis: disciplina (1), tópico (2) e subtópico (3). ' +
-              'Responda APENAS com JSON no formato {"level": 1|2|3, "match": "nome exato do item do catálogo"} ' +
+               'Você classifica questões de provas em um catálogo educativo com níveis: disciplina (1), conteúdo (2), tópico (3) e subtópico (4). ' +
+               'Responda APENAS com JSON no formato {"level": 1|2|3|4, "match": "nome exato do item do catálogo"} ' +
               'escolhendo o nível mais específico que fizer sentido. Se nada casar, retorne {"level": null, "match": null}.',
           },
           {

@@ -65,9 +65,9 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
   const raw = await pdf(input as unknown as Buffer);
 
   // Peças de texto por página (para rastrear referências visuais por página)
-  const perPage: string[] = (raw as any).text
-    ? [String((raw as any).text)]
-    : (raw.text ?? '').split(/\f/).filter((p) => p.trim().length > 0);
+  const perPage: string[] = String((raw as any).text ?? raw.text ?? '')
+    .split(/\f/)
+    .filter((p) => p.trim().length > 0);
 
   const fullText = perPage.join('\n');
 

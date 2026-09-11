@@ -13,11 +13,8 @@ router.patch('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => cont
 router.post('/:id/archive', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.archive(req, res));
 
 router.post('/:id/students/link', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.linkStudent(req, res));
+router.get('/:id/students/search', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.searchStudents(req, res));
 router.post('/:id/students/import-csv', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.importCsv(req, res));
 router.delete('/:id/students/:studentId', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.removeStudent(req, res));
-
-router.post('/:id/join-request', authMiddleware, (req, res) => controller.requestLink(req, res));
-router.get('/:id/join-requests', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.pendingRequests(req, res));
-router.post('/:id/join-requests/:memberId', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.decideRequest(req, res));
 
 export default router;

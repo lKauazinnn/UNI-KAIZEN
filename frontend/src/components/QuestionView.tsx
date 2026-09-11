@@ -18,18 +18,20 @@ export function QuestionView({
   index,
   selected,
   onSelect,
+  readOnly = false,
 }: {
   question: Question;
   compact?: boolean;
   /** 'review' = professor confere · 'exam' = aluno responde */
-  mode?: 'review' | 'exam';
+  mode?: 'review' | 'exam' | 'result';
+  readOnly?: boolean;
   /** Usado como número quando a questão não tem número próprio */
   index?: number;
   /** Letra marcada pelo aluno (modo 'exam') */
   selected?: string | null;
   /** Marca/desmarca a alternativa (modo 'exam') */
   onSelect?: (letter: string | null) => void;
-}) {
+  }) {
   const isExam = mode === 'exam';
   const gabarito = question.gabarito?.toUpperCase();
   const numero = question.number ?? (index !== undefined ? index + 1 : undefined);
@@ -57,6 +59,9 @@ export function QuestionView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         {numero !== undefined && <Badge tone="neutral">Questão {numero}</Badge>}
+        {question.taxonomy && question.taxonomy.length > 0 && (
+          <Badge tone="blue">{question.taxonomy.map((item) => item.name).join(' > ')}</Badge>
+        )}
 
         {isExam
           ? selected && <Badge tone="teal">Respondida: {selected}</Badge>
@@ -64,7 +69,7 @@ export function QuestionView({
             <>
               {question.status && (
                 <Badge tone={question.status === 'approved' ? 'green' : question.status === 'rejected' ? 'red' : 'amber'}>
-                  {question.status === 'approved' ? 'Aprovada' : question.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
+                  {question.status === 'approved' ? 'Aprovada' : question.status === 'rejected' ? 'Rejeitada' : 'Pré-aprovada'}
                 </Badge>
               )}
               {question.gabarito ? (
@@ -132,7 +137,7 @@ export function QuestionView({
 
             const base = 'w-full text-left flex items-start gap-3 rounded-xl border px-4 py-3 transition';
 
-            return isExam ? (
+            return isExam && !readOnly ? (
               <button
                 key={alt.letter}
                 type="button"
@@ -168,6 +173,7 @@ export function QuestionView({
               <textarea
                 value={selected ?? ''}
                 onChange={(e) => onSelect?.(e.target.value)}
+                readOnly={readOnly}
                 placeholder="Digite sua resposta aqui..."
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 min-h-[90px]"
               />

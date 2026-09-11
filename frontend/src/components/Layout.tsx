@@ -32,7 +32,7 @@ const navProfessor = [
 ];
 
 // A regra das cinco áreas vale para o painel do professor; o do aluno
-// precisa da entrada de turmas para ele conseguir solicitar vínculo (B07).
+// precisa da entrada de turmas para abrir os simulados de cada turma.
 const navAluno = [
   { to: '/aluno/turmas', label: 'Minhas turmas', icon: Users },
   { to: '/aluno/simulados', label: 'Simulados', icon: BookOpen },

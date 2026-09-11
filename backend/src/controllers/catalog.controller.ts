@@ -5,13 +5,13 @@ import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 
 const addItemSchema = z.object({
-  level: z.number().min(1).max(3),
+  level: z.number().min(1).max(4),
   name: z.string().min(1, 'Nome obrigatório'),
   parentId: z.string().nullable().optional(),
 });
 
 export class CatalogController {
-  // Lista a árvore completa da organização (disciplinas → tópicos → subtópicos)
+  // Lista a árvore completa: disciplina -> conteúdo -> tópico -> subtópico.
   async tree(req: AuthRequest, res: Response) {
     try {
       const { data, error } = await supabase
@@ -22,17 +22,23 @@ export class CatalogController {
       if (error) return res.status(500).json({ error: 'Erro ao buscar catálogo' });
 
       const items = data ?? [];
+      const childrenOf = (parentId: string, level: number): any[] =>
+        items
+          .filter((item) => item.parentId === parentId && item.level === level)
+          .map((item) => ({
+            ...item,
+            ...(level === 2 ? { topics: childrenOf(item.id, 3) } : {}),
+            ...(level === 3 ? { subtopics: childrenOf(item.id, 4) } : {}),
+          }));
+
       const disciplines = items
-        .filter((i) => i.level === 1)
-        .map((d) => ({
-          ...d,
-          topics: items
-            .filter((t) => t.parentId === d.id)
-            .map((t) => ({
-              ...t,
-              subtopics: items.filter((s) => s.parentId === t.id),
-            })),
-        }));
+        .filter((item) => item.level === 1)
+        .map((discipline) => {
+          const contents = childrenOf(discipline.id, 2);
+          // `topics` mantém o contrato antigo para clientes existentes; o
+          // nome canônico do segundo nível agora é `contents`.
+          return { ...discipline, contents, topics: contents };
+        });
 
       return res.json(disciplines);
     } catch (error) {

@@ -20,8 +20,8 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      const role = localStorage.getItem('@kaizen:user') ? JSON.parse(localStorage.getItem('@kaizen:user')!).role : '';
-      navigate(role === 'aluno' ? '/aluno/inicio' : '/inicio');
+      const user = JSON.parse(localStorage.getItem('@kaizen:user') || '{}');
+      navigate(user.role === 'aluno' ? '/aluno/inicio' : user.role === 'admin' ? '/admin/dashboard' : '/inicio');
     } catch (err) {
       setError(apiError(err));
     } finally {

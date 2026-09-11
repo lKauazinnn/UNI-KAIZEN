@@ -67,7 +67,7 @@ export class ImportController {
           // Faz upload da imagem original para o storage do Supabase
           const ext = file.originalname.split('.').pop() || 'png';
           const visualKey = `img-${Date.now()}.${ext}`;
-          const visualUrl = await this.uploadVisual(req.organizationId!, job.id, visualKey, file.buffer);
+           const visualUrl = await this.uploadVisual(req.organizationId!, job.id, visualKey, file.buffer, file.mimetype);
 
           const inserted: any[] = [];
           for (const [index, q] of extractedList.entries()) {
@@ -106,7 +106,7 @@ export class ImportController {
             if (qErr) {
               console.error('[import:image] erro ao inserir questão:', JSON.stringify(qErr));
             } else if (created) {
-              inserted.push(created);
+              inserted.push({ ...created, taxonomy: this.taxonomyFor(catalog, created.catalogItemId) });
             }
           }
 
@@ -153,9 +153,11 @@ export class ImportController {
           console.error('[import] falha ao extrair visuais:', visualError);
           return [];
         });
-        const regionByNumber = new Map<number, any>();
+        const regionsByNumber = new Map<number, any[]>();
         for (const region of regions) {
-          if (!regionByNumber.has(region.questionNumber)) regionByNumber.set(region.questionNumber, region);
+          const current = regionsByNumber.get(region.questionNumber) ?? [];
+          current.push(region);
+          regionsByNumber.set(region.questionNumber, current);
         }
 
         // Classificação assistida por IA (B13)
@@ -169,21 +171,12 @@ export class ImportController {
             );
           }
 
-          const region = regionByNumber.get(q.number ?? -1);
-          let images = q.images;
-          if (region) {
-            const key = `pag${region.pageIndex}-q${q.number ?? index + 1}.png`;
+          const questionRegions = regionsByNumber.get(q.number ?? -1) ?? [];
+          let images = [...q.images];
+          for (const [regionIndex, region] of questionRegions.entries()) {
+            const key = `pag${region.pageIndex}-q${q.number ?? index + 1}-${regionIndex}.png`;
             const url = await this.uploadVisual(req.organizationId!, job.id, key, region.buffer);
-            if (url) {
-              images = [
-                {
-                  url,
-                  caption: q.images.length > 0 ? q.images[0].caption : `Visual da página ${region.pageIndex}`,
-                  source: 'pdf-page',
-                  page: region.pageIndex,
-                },
-              ];
-            }
+            if (url) images.push({ url, caption: `Elemento visual da página ${region.pageIndex}`, source: 'pdf-page', page: region.pageIndex });
           }
 
           const { data: created, error: qErr } = await supabase
@@ -211,7 +204,7 @@ export class ImportController {
           if (qErr) {
             console.error('Erro ao inserir questão:', JSON.stringify(qErr));
           } else if (created) {
-            inserted.push(created);
+            inserted.push({ ...created, taxonomy: this.taxonomyFor(catalog, created.catalogItemId) });
           }
         }
 
@@ -239,7 +232,7 @@ export class ImportController {
           job: { ...job, status: 'completed', totalQuestions: inserted.length },
           questions: inserted,
           warnImages:
-            regionByNumber.size === 0
+               regionsByNumber.size === 0
               ? 'Não foi possível extrair automaticamente o visual de cada questão deste PDF. Revise cada questão visualmente antes de aprovar.'
               : undefined,
         });
@@ -312,6 +305,20 @@ export class ImportController {
     return data ?? [];
   }
 
+  private taxonomyFor(catalog: Array<{ id: string; name: string; level: number; parentId: string | null }>, itemId?: string | null) {
+    if (!itemId) return [];
+    const byId = new Map(catalog.map((item) => [item.id, item]));
+    const path: Array<{ level: number; name: string }> = [];
+    let current = byId.get(itemId);
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      path.unshift({ level: current.level, name: current.name });
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+    return path;
+  }
+
   // ─── Supabase Storage (B11: gráficos/imagens reais por questão) ──────────
   private async ensureVisualBucket() {
     const { error } = await supabase.storage.getBucket(VISUAL_BUCKET);
@@ -325,12 +332,12 @@ export class ImportController {
     }
   }
 
-  private async uploadVisual(orgId: string, jobId: string, key: string, buffer: Buffer): Promise<string | null> {
+  private async uploadVisual(orgId: string, jobId: string, key: string, buffer: Buffer, contentType = 'image/png'): Promise<string | null> {
     await this.ensureVisualBucket();
     const path = `${orgId}/${jobId}/${key}`;
     const { error: uploadError } = await supabase.storage
       .from(VISUAL_BUCKET)
-      .upload(path, buffer, { contentType: 'image/png', upsert: true });
+      .upload(path, buffer, { contentType, upsert: true });
     if (uploadError) {
       console.error('[storage] erro ao enviar visual:', uploadError.message);
       return null;

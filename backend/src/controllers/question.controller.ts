@@ -8,7 +8,7 @@ const updateSchema = z.object({
   statement: z.string().min(1, 'Enunciado obrigatório'),
   alternatives: z.array(z.object({ letter: z.string(), text: z.string() })).optional().default([]),
   gabarito: z.string().nullable().optional(),
-  gabaritoOrigin: z.enum(['document', 'ai', 'professor']).nullable().optional(),
+  gabaritoOrigin: z.enum(['document', 'heuristic', 'ai', 'professor']).nullable().optional(),
   catalogItemId: z.string().nullable().optional(),
 });
 
@@ -37,6 +37,7 @@ export class QuestionController {
       if (status && status !== 'all') query = query.eq('status', status);
       if (importJobId) query = query.eq('importJobId', importJobId);
       if (catalogItemId) query = query.eq('catalogItemId', catalogItemId);
+      if (search) query = query.ilike('statement', `%${search}%`);
       const order = req.query.order as string | undefined;
       if (order === 'createdDesc') {
         query = query.order('createdAt', { ascending: false });
@@ -79,7 +80,7 @@ export class QuestionController {
         .eq('organizationId', req.organizationId!)
         .single();
       if (error || !question) return res.status(404).json({ error: 'Questão não encontrada' });
-      return res.json(question);
+      return res.json({ ...(await this.addTaxonomy(question, req.organizationId!)) });
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: 'Erro ao buscar questão' });
@@ -94,11 +95,20 @@ export class QuestionController {
 
       const { data: existing } = await supabase
         .from('questions')
-        .select('organizationId')
+        .select('organizationId, gabarito, gabaritoOrigin')
         .eq('id', id)
         .single();
       if (!existing || existing.organizationId !== req.organizationId) {
         return res.status(404).json({ error: 'Questão não encontrada' });
+      }
+
+      const { data: usedInPublished } = await supabase
+        .from('exam_questions')
+        .select('examId, exams!inner(status)')
+        .eq('questionId', id)
+        .eq('exams.status', 'published');
+      if ((usedInPublished ?? []).length > 0) {
+        return res.status(409).json({ error: 'Questão usada em simulado publicado não pode ser alterada.' });
       }
 
       const updates: Record<string, unknown> = {
@@ -108,9 +118,14 @@ export class QuestionController {
         updatedAt: new Date().toISOString(),
       };
       if (parsed.gabarito !== undefined) {
-        updates.gabarito = parsed.gabarito ? parsed.gabarito.toUpperCase() : null;
-        updates.gabaritoOrigin = parsed.gabarito ? (parsed.gabaritoOrigin ?? 'professor') : null;
+        const nextGabarito = parsed.gabarito ? parsed.gabarito.trim() : null;
+        const changed = (existing.gabarito ?? null) !== nextGabarito;
+        updates.gabarito = nextGabarito && parsed.alternatives.length > 0 ? nextGabarito.toUpperCase() : nextGabarito;
+        updates.gabaritoOrigin = nextGabarito
+          ? (parsed.gabaritoOrigin ?? (changed ? 'professor' : existing.gabaritoOrigin ?? 'professor'))
+          : null;
       }
+      if (parsed.catalogItemId === null) updates.classificationSource = null;
 
       const { data, error } = await supabase
         .from('questions')
@@ -140,6 +155,15 @@ export class QuestionController {
         .single();
       if (!existing || existing.organizationId !== req.organizationId) {
         return res.status(404).json({ error: 'Questão não encontrada' });
+      }
+
+      const { data: usedInPublished } = await supabase
+        .from('exam_questions')
+        .select('examId, exams!inner(status)')
+        .eq('questionId', id)
+        .eq('exams.status', 'published');
+      if ((usedInPublished ?? []).length > 0) {
+        return res.status(409).json({ error: 'Questão usada em simulado publicado não pode ser excluída.' });
       }
 
       // O banco tem ON DELETE CASCADE em exam_questions/answers: apagar uma questão
@@ -219,16 +243,18 @@ export class QuestionController {
       for (const q of pending ?? []) {
         const validity = await this.validateQuestion(q.id, req.organizationId!);
         if (validity.valid) {
-          await supabase
+          const { error: approveError } = await supabase
             .from('questions')
             .update({ status: 'approved', updatedAt: new Date().toISOString() })
             .eq('id', q.id);
+          if (approveError) return res.status(500).json({ error: 'Erro ao aprovar lote de questões' });
           approved.push(q.id);
         } else {
-          await supabase
+          const { error: rejectError } = await supabase
             .from('questions')
             .update({ status: 'rejected', rejectionReason: validity.reason, updatedAt: new Date().toISOString() })
             .eq('id', q.id);
+          if (rejectError) return res.status(500).json({ error: 'Erro ao registrar questões inválidas' });
           rejected.push({ id: q.id, number: q.number ?? null, reason: validity.reason ?? 'Inválida' });
         }
       }
@@ -318,5 +344,23 @@ export class QuestionController {
     }
 
     return { valid: true };
+  }
+
+  private async addTaxonomy(question: any, orgId: string) {
+    if (!question.catalogItemId) return { ...question, taxonomy: [] };
+    const { data: items } = await supabase
+      .from('catalog_items')
+      .select('id, name, level, parentId')
+      .eq('organizationId', orgId);
+    const byId = new Map((items ?? []).map((item) => [item.id, item]));
+    const taxonomy: { level: number; name: string }[] = [];
+    let current = byId.get(question.catalogItemId);
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      taxonomy.unshift({ level: current.level, name: current.name });
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+    return { ...question, taxonomy };
   }
 }

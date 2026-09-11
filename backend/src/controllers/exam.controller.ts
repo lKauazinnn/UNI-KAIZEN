@@ -8,13 +8,13 @@ import { logAudit } from '../lib/audit';
 const createSchema = z.object({
   title: z.string().min(2, 'Título do simulado obrigatório'),
   turmaId: z.string(),
-  questionIds: z.array(z.string()).min(1, 'Selecione pelo menos uma questão'),
+  questionIds: z.array(z.string()).min(1, 'Selecione pelo menos uma questão').refine((ids) => new Set(ids).size === ids.length, 'Não repita questões no simulado'),
 });
 
 const updateSchema = z.object({
   title: z.string().min(2, 'Título do simulado obrigatório').optional(),
   turmaId: z.string().optional(),
-  questionIds: z.array(z.string()).min(1, 'Selecione pelo menos uma questão').optional(),
+  questionIds: z.array(z.string()).min(1, 'Selecione pelo menos uma questão').refine((ids) => new Set(ids).size === ids.length, 'Não repita questões no simulado').optional(),
 });
 
 export class ExamController {
@@ -25,7 +25,7 @@ export class ExamController {
       // Valida turma e pertencimento
       const { data: turma } = await supabase
         .from('turmas')
-        .select('organizationId, professorId')
+        .select('organizationId, professorId, archived')
         .eq('id', turmaId)
         .single();
       if (!turma || turma.organizationId !== req.organizationId) {
@@ -34,21 +34,11 @@ export class ExamController {
       if (req.userRole !== 'admin' && turma.professorId !== req.userId) {
         return res.status(403).json({ error: 'Você não administra essa turma' });
       }
+      if (turma.archived) return res.status(400).json({ error: 'Não é possível criar simulado para uma turma arquivada' });
 
       // Valida questões (aprovadas, da organização)
-      const { data: questions, error: qErr } = await supabase
-        .from('questions')
-        .select('id')
-        .eq('organizationId', req.organizationId!)
-        .eq('status', 'approved')
-        .in('id', questionIds);
-      if (qErr) return res.status(500).json({ error: 'Erro ao validar questões' });
-
-      const validIds = (questions ?? []).map((q) => q.id);
-      const missing = questionIds.filter((id) => !validIds.includes(id));
-      if (missing.length > 0) {
-        return res.status(400).json({ error: 'Algumas questões não estão aprovadas ou não pertencem à sua organização' });
-      }
+      const validationError = await this.validateQuestionIds(questionIds, req.organizationId!);
+      if (validationError) return res.status(400).json({ error: validationError });
 
       const now = new Date().toISOString();
       const { data: exam, error: examError } = await supabase
@@ -67,12 +57,16 @@ export class ExamController {
       if (examError || !exam) return res.status(500).json({ error: 'Erro ao criar simulado' });
 
       for (const [index, questionId] of questionIds.entries()) {
-        await supabase.from('exam_questions').insert({
+        const { error: questionError } = await supabase.from('exam_questions').insert({
           id: randomUUID(),
           examId: exam.id,
           questionId,
           order: index + 1,
         });
+        if (questionError) {
+          await supabase.from('exams').delete().eq('id', exam.id);
+          return res.status(500).json({ error: 'Erro ao vincular questões ao simulado' });
+        }
       }
 
       await logAudit({ organizationId: req.organizationId!, userId: req.userId!, action: 'create', entityType: 'exam', entityId: exam.id, details: { title } });
@@ -89,20 +83,18 @@ export class ExamController {
       const isProfessor = req.userRole === 'professor' || req.userRole === 'admin';
 
       if (isProfessor) {
-        const { data: turmas } = await supabase
-          .from('turmas')
-          .select('id')
-          .eq('organizationId', req.organizationId!)
-          .eq('professorId', req.userId!);
+        let turmasQuery = supabase.from('turmas').select('id').eq('organizationId', req.organizationId!);
+        if (req.userRole !== 'admin') turmasQuery = turmasQuery.eq('professorId', req.userId!);
+        const { data: turmas } = await turmasQuery;
         const turmaIds = (turmas ?? []).map((t) => t.id);
         const { data, error } = await supabase
           .from('exams')
-          .select('*, turmas(id, name)')
+          .select('*, turmas(id, name), exam_questions(id, questionId, "order")')
           .eq('organizationId', req.organizationId!)
           .in('turmaId', turmaIds.length > 0 ? turmaIds : ['none'])
           .order('createdAt', { ascending: false });
         if (error) return res.status(500).json({ error: 'Erro ao listar simulados' });
-        return res.json(data ?? []);
+        return res.json((data ?? []).map((exam: any) => ({ ...exam, questions: exam.exam_questions ?? undefined, exam_questions: undefined })));
       }
 
       // Aluno: só simulados publicados das turmas onde é membro
@@ -116,13 +108,17 @@ export class ExamController {
 
       const { data, error } = await supabase
         .from('exams')
-        .select('*, turmas(id, name)')
+        .select('*, turmas(id, name), exam_questions(id, questionId, "order"), attempts(id, userId, status)')
         .eq('organizationId', req.organizationId!)
         .eq('status', 'published')
         .in('turmaId', turmaIds)
         .order('publishedAt', { ascending: false });
       if (error) return res.status(500).json({ error: 'Erro ao listar simulados' });
-      return res.json(data ?? []);
+      return res.json((data ?? []).map((exam: any) => {
+        const attempts = Array.isArray(exam.attempts) ? exam.attempts : [];
+        const { attempts: _attempts, exam_questions: examQuestions, ...safeExam } = exam;
+        return { ...safeExam, questions: examQuestions ?? [], hasAttempt: attempts.some((attempt: any) => attempt.userId === req.userId) };
+      }));
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: 'Erro ao listar simulados' });
@@ -133,7 +129,7 @@ export class ExamController {
   async getById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { data: exam, error } = await supabase
+       const { data: exam, error } = await supabase
         .from('exams')
         .select('*, turmas(id, name), attempts(id, userId, status, submittedAt)')
         .eq('id', id)
@@ -196,6 +192,9 @@ export class ExamController {
       if (current?.status === 'published') {
         return res.status(400).json({ error: 'Simulado publicado não pode ser alterado. Crie uma nova versão.' });
       }
+      if (current?.status === 'archived') {
+        return res.status(400).json({ error: 'Simulado arquivado não pode ser alterado.' });
+      }
 
       const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
       if (parsed.title) updates.title = parsed.title;
@@ -205,7 +204,7 @@ export class ExamController {
         // o simulado para a turma de outro professor.
         const { data: turma } = await supabase
           .from('turmas')
-          .select('organizationId, professorId')
+          .select('organizationId, professorId, archived')
           .eq('id', parsed.turmaId)
           .single();
         if (!turma || turma.organizationId !== req.organizationId) {
@@ -214,6 +213,7 @@ export class ExamController {
         if (req.userRole !== 'admin' && turma.professorId !== req.userId) {
           return res.status(403).json({ error: 'Você não administra essa turma' });
         }
+        if (turma.archived) return res.status(400).json({ error: 'Não é possível mover simulado para turma arquivada' });
         updates.turmaId = parsed.turmaId;
       }
 
@@ -227,9 +227,12 @@ export class ExamController {
       if (error || !exam) return res.status(500).json({ error: 'Erro ao atualizar simulado' });
 
       if (parsed.questionIds) {
+        const validationError = await this.validateQuestionIds(parsed.questionIds, req.organizationId!);
+        if (validationError) return res.status(400).json({ error: validationError });
         await supabase.from('exam_questions').delete().eq('examId', id);
         for (const [index, questionId] of parsed.questionIds.entries()) {
-          await supabase.from('exam_questions').insert({ id: randomUUID(), examId: id, questionId, order: index + 1 });
+          const { error: questionError } = await supabase.from('exam_questions').insert({ id: randomUUID(), examId: id, questionId, order: index + 1 });
+          if (questionError) return res.status(500).json({ error: 'Erro ao atualizar questões do simulado' });
         }
       }
 
@@ -250,11 +253,15 @@ export class ExamController {
 
       const { data: examQuestions, error: eqErr } = await supabase
         .from('exam_questions')
-        .select('id')
+        .select('id, questionId')
         .eq('examId', id);
       if (eqErr || !examQuestions || examQuestions.length === 0) {
         return res.status(400).json({ error: 'Simulado sem questões — adicione questões antes de publicar' });
       }
+      const validationError = await this.validateQuestionIds(examQuestions.map((question) => question.questionId), req.organizationId!);
+      if (validationError) return res.status(400).json({ error: validationError });
+      const { data: current } = await supabase.from('exams').select('status').eq('id', id).single();
+      if (current?.status !== 'draft') return res.status(400).json({ error: 'Somente simulados em rascunho podem ser publicados.' });
 
       const { data, error } = await supabase
         .from('exams')
@@ -317,5 +324,18 @@ export class ExamController {
       return false;
     }
     return true;
+  }
+
+  private async validateQuestionIds(questionIds: string[], organizationId: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('id')
+      .eq('organizationId', organizationId)
+      .eq('status', 'approved')
+      .in('id', questionIds);
+    if (error) return 'Erro ao validar questões';
+    const validIds = new Set((data ?? []).map((question) => question.id));
+    if (questionIds.some((id) => !validIds.has(id))) return 'Todas as questões precisam estar aprovadas e pertencer à organização';
+    return null;
   }
 }

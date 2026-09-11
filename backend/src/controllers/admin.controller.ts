@@ -15,7 +15,7 @@ const addUserSchema = z.object({
   role: z.enum(['professor', 'aluno']),
 });
 
-const changeRoleSchema = z.object({ role: z.enum(['admin', 'professor', 'aluno']) });
+const changeRoleSchema = z.object({ role: z.enum(['professor', 'aluno']) });
 
 const AdminControllerInstance = {
   // Cria usuário na organização do admin
@@ -68,7 +68,7 @@ const AdminControllerInstance = {
     }
   },
 
-  // Altera papel (admin/professor/aluno) e status
+  // Altera papel (professor/aluno) e status. Admin é reservado ao proprietário.
   async updateUser(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;

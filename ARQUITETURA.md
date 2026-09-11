@@ -42,24 +42,32 @@ auth (redefinição de senha). A segurança é feita em duas camadas:
   `OWNER_EMAIL` vira `admin`.
 - `POST /auth/login` valida senha (bcrypt) e devolve JWT de 7 dias.
 - `GET /auth/me` devolve o usuário atual.
+- O cadastro aceita somente os perfis `professor` e `aluno`; o redirecionamento usa o
+  perfil retornado pelo backend.
 - `forgot-password`/`reset-password` usam o Supabase Auth (fluxo de e-mail) com fallback
   dev (`debugResetUrl` em dev).
 
+## Turmas (B05-B08)
+
+- `POST /classes` cria a turma do professor.
+- `GET /classes/:id/students/search?q=` pesquisa alunos já cadastrados na organização.
+- `POST /classes/:id/students/link` cria o vínculo ativo diretamente; `DELETE` remove o vínculo.
+
 ## Importação de PDF (B09-B13)
 
-1. `POST /import/upload` (multipart, máx. 15 MB) grava um `import_jobs`.
+1. `POST /imports/upload` (multipart, máx. 4 MB) grava um `import_jobs`.
 2. `pdf-parse` extrai o texto; o parser (`src/lib/pdf.ts`) separa as questões, identifica o
    gabarito (`respostas: ...`), preserva referências visuais (imagens/gráficos/mapas) e
    registra de onde veio o gabarito (`gabaritoOrigin`) e a confiança (`gabaritoConfidence`).
-3. Para cada questão, `src/lib/ai.ts` tenta classificar no catálogo via Groq (opcional).
+3. Para cada questão, `src/lib/ai.ts` tenta classificar no catálogo via Gemini/Groq (opcional),
+   mantendo a cadeia disciplina → conteúdo → tópico → subtópico.
 4. As questões entram como `pending` e o professor revisa.
 
 ## Revisão de questões (B14-B18)
 
 - Lista por status (`GET /questions?status=pending|approved|rejected|all`).
-- Edição (`PATCH`), exclusão (`DELETE`), aprovação individual (`POST /:id/approve`),
-  classificação manual (`POST /:id/classificate`).
-- **Aprovação em lote**: `POST /questions/approve-valid` valida tecnicamente cada pendente
+- Edição (`PATCH`), exclusão (`DELETE`) e classificação manual (`POST /:id/classificate`).
+- **Aprovação em lote**: `POST /questions/approve-all` valida tecnicamente cada pendente
   (enunciado ≥ 5 chars e ≥ 2 alternativas); válidas vão para `approved`, demais para
   `rejected` com `rejectionReason`.
 

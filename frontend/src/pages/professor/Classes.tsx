@@ -27,7 +27,7 @@ export default function Classes() {
 
   const load = () => {
     setLoading(true);
-    api.get('/classes').then(({ data }) => setTurmas(data)).catch(() => {}).finally(() => setLoading(false));
+    api.get('/classes').then(({ data }) => setTurmas(data)).catch((err) => setError(apiError(err))).finally(() => setLoading(false));
   };
 
   useEffect(load, []);

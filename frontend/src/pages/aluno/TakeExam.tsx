@@ -36,6 +36,10 @@ export default function TakeExam() {
         setAnswers(map);
         setData(data);
       } catch (err) {
+        if ((err as any)?.response?.data?.attempt?.status === 'submitted') {
+          navigate(`/aluno/simulados/${id}/resultado`, { replace: true });
+          return;
+        }
         const msg = apiError(err);
         if (msg.includes('não')) {
           navigate('/aluno/simulados', { replace: true });
@@ -50,17 +54,13 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!data?.attempt) return;
-    const interval = window.setInterval(async () => {
+      const interval = window.setInterval(async () => {
       // Não salvar em cima de um envio em andamento (B23).
       if (submittingRef.current) return;
-      const entries = Object.entries(answers).filter(([, v]) => v !== null);
-      if (entries.length === 0) return;
-      setSaving(true);
-      try {
-        await api.put(`/attempts/${data.attempt.id}/answers`, {
-          answers: Object.entries(answers)
-            .filter(([, v]) => v !== null)
-            .map(([questionId, selected]) => ({ questionId, selected })),
+       setSaving(true);
+       try {
+         await api.put(`/attempts/${data.attempt.id}/answers`, {
+           answers: Object.entries(answers).map(([questionId, selected]) => ({ questionId, selected })),
         });
         setLastSaved(new Date());
       } catch {
@@ -74,7 +74,7 @@ export default function TakeExam() {
   }, [data, answers]);
 
   const select = (questionId: string, letter: string | null) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: letter }));
+    setAnswers((prev) => ({ ...prev, [questionId]: letter?.trim() ? letter : null }));
     setError('');
   };
 
@@ -83,13 +83,12 @@ export default function TakeExam() {
     setSaving(true);
     try {
       await api.put(`/attempts/${data.attempt.id}/answers`, {
-        answers: Object.entries(answers)
-          .filter(([, v]) => v !== null)
-          .map(([questionId, selected]) => ({ questionId, selected })),
+        answers: Object.entries(answers).map(([questionId, selected]) => ({ questionId, selected })),
       });
       setLastSaved(new Date());
     } catch (err) {
       setError(apiError(err));
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -112,6 +111,8 @@ export default function TakeExam() {
     } catch (err) {
       setError(apiError(err));
       setConfirmSubmit(false);
+    } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   };
@@ -168,7 +169,7 @@ export default function TakeExam() {
             Responda todas as questões para finalizar. Suas respostas são salvas automaticamente.
           </span>
         )}
-        <Button variant="outline" onClick={saveNow} disabled={saving} className="w-full sm:w-auto">
+         <Button variant="outline" onClick={() => { void saveNow().catch(() => undefined); }} disabled={saving} className="w-full sm:w-auto">
           <Timer size={16} /> Salvar respostas
         </Button>
         <Button onClick={() => setConfirmSubmit(true)} disabled={saving || answered === 0} className="w-full sm:w-auto bg-primary-500">

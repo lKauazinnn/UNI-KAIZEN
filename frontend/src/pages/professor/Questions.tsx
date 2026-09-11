@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { FileQuestion, ChevronRight, CheckCheck, Search, X, AlertTriangle, FileUp, FolderTree } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { Question } from '../../types';
-import { PageHeader, Card, Badge, Spinner, EmptyState, Button, Input } from '../../components/ui';
+import { PageHeader, Card, Badge, Spinner, EmptyState, Button, Input, ConfirmDialog } from '../../components/ui';
 
 const tabs = [
   { key: 'pending', label: 'Revisar' },
@@ -25,6 +25,7 @@ export default function Questions() {
   // B18: busca por enunciado para reencontrar as questões depois.
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
+  const [confirmBatch, setConfirmBatch] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -64,6 +65,7 @@ export default function Questions() {
   };
 
   const approveValidBatch = async () => {
+    setConfirmBatch(false);
     setBatchMsg('');
     setBatchError('');
     setBatchRejected([]);
@@ -101,8 +103,8 @@ export default function Questions() {
               <Button variant="ghost"><FolderTree size={16} /> Catálogo</Button>
             </Link>
             {tab === 'pending' && (
-              <Button variant="success" onClick={approveValidBatch}>
-                <CheckCheck size={16} /> Aprovar válidas em lote
+       <Button variant="success" onClick={() => setConfirmBatch(true)}>
+                 <CheckCheck size={16} /> Aprovar todas as questões
               </Button>
             )}
           </div>
@@ -216,7 +218,7 @@ export default function Questions() {
                   <div className="flex flex-wrap items-center gap-2 mb-1.5">
                     {q.number && <Badge tone="neutral">Questão {q.number}</Badge>}
                     <Badge tone={q.status === 'approved' ? 'green' : q.status === 'rejected' ? 'red' : 'amber'}>
-                      {q.status === 'approved' ? 'Aprovada' : q.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
+                      {q.status === 'approved' ? 'Aprovada' : q.status === 'rejected' ? 'Rejeitada' : 'Pré-aprovada'}
                     </Badge>
                     {q.gabarito && <Badge tone="teal">Gabarito: {q.gabarito.toUpperCase()}</Badge>}
                     {q.catalog_items?.name && <Badge tone="blue">{q.catalog_items.name}</Badge>}
@@ -236,6 +238,15 @@ export default function Questions() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmBatch}
+        onClose={() => setConfirmBatch(false)}
+        onConfirm={approveValidBatch}
+        title="Aprovar todas as questões"
+        message="As questões pendentes válidas entrarão no banco aprovado. Questões com dados incompletos ficarão marcadas para correção."
+        confirmLabel="Aprovar todas"
+      />
     </div>
   );
 }

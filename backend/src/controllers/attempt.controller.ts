@@ -9,7 +9,7 @@ const saveAnswersSchema = z.object({
   answers: z.array(
     z.object({
       questionId: z.string(),
-      selected: z.string().regex(/^[A-Ea-e]$/).nullable(),
+      selected: z.string().max(10000, 'Resposta muito longa').nullable(),
     })
   ),
 });
@@ -175,18 +175,20 @@ export class AttemptController {
           .maybeSingle();
 
         if (existing) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('answers')
             .update({ selected: answer.selected, updatedAt: new Date().toISOString() })
             .eq('id', existing.id);
+          if (updateError) return res.status(500).json({ error: 'Erro ao salvar uma das respostas' });
         } else {
-          await supabase.from('answers').insert({
+          const { error: insertError } = await supabase.from('answers').insert({
             id: randomUUID(),
             attemptId,
             questionId: answer.questionId,
             selected: answer.selected,
             updatedAt: new Date().toISOString(),
           });
+          if (insertError) return res.status(500).json({ error: 'Erro ao salvar uma das respostas' });
         }
       }
 

@@ -159,17 +159,20 @@ export default function AdminUsuarios() {
                           <span className="text-xs text-slate-500">Conta atual</span>
                         ) : (
                           <div className="flex gap-2">
-                            <select
-                              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-900 dark:text-slate-100 text-xs px-2 py-1.5"
-                              value={u.role}
-                              onChange={(e) => {
-                                setRoleTarget({ ...u, role: e.target.value as AdminUser['role'] });
-                              }}
-                            >
-                              <option value="professor">Professor</option>
-                              <option value="aluno">Aluno</option>
-                              <option value="admin">Administrador</option>
-                            </select>
+                            {u.role === 'admin' ? (
+                              <Badge tone="teal">Administrador protegido</Badge>
+                            ) : (
+                              <select
+                                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/60 text-slate-900 dark:text-slate-100 text-xs px-2 py-1.5"
+                                value={u.role}
+                                onChange={(e) => {
+                                  setRoleTarget({ ...u, role: e.target.value as AdminUser['role'] });
+                                }}
+                              >
+                                <option value="professor">Professor</option>
+                                <option value="aluno">Aluno</option>
+                              </select>
+                            )}
                             <Button size="sm" variant={u.isActive ? 'ghost' : 'success'} onClick={() => setConfirm({ id: u.id, active: u.isActive })}>
                               {u.isActive ? 'Desativar' : 'Ativar'}
                             </Button>
@@ -188,10 +191,8 @@ export default function AdminUsuarios() {
       <div className="mt-6 flex items-start gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--bg-card)] p-4 text-sm text-slate-400">
         <UsersIcon size={18} className="mt-0.5 shrink-0 text-primary-400" />
         <p>
-          <b className="text-slate-300">Como os professores cadastram alunos?</b> No detalhe da turma, em{' '}
-          <span className="text-slate-200 font-semibold">Vincular aluno</span> (cria a conta com senha temporária) ou{' '}
-          <span className="text-slate-200 font-semibold">Importar CSV</span> (um e-mail por linha). Alunos também podem se
-          cadastrar na tela pública e pedir vínculo à turma.
+           <b className="text-slate-300">Como os professores vinculam alunos?</b> No detalhe da turma, use{' '}
+           <span className="text-slate-200 font-semibold">Vincular aluno</span> para pesquisar um aluno cadastrado e confirmar o vínculo.
         </p>
       </div>
 

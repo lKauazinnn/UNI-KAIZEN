@@ -4,6 +4,7 @@ import { ArrowLeft, Trophy } from 'lucide-react';
 import { api } from '../../services/api';
 import { MyResult } from '../../types';
 import { PageHeader, Card, Badge, Spinner, ProgressBar } from '../../components/ui';
+import { QuestionView } from '../../components/QuestionView';
 
 export default function ExamResult() {
   const { id } = useParams();
@@ -68,7 +69,22 @@ export default function ExamResult() {
                     <Badge tone="red">Errada ✗</Badge>
                   )}
                 </div>
-                <p className="text-sm text-slate-200 leading-relaxed mb-2">{q.statement}</p>
+                <QuestionView
+                  question={{
+                    id: `result-${i}`,
+                    organizationId: '',
+                    createdBy: '',
+                    statement: q.statement,
+                    alternatives: q.alternatives ?? [],
+                    images: q.images ?? [],
+                    gabarito: q.gabarito,
+                    status: 'approved',
+                    createdAt: '',
+                  }}
+                  mode="result"
+                  index={i}
+                  selected={q.selected}
+                />
                 <div className="flex flex-wrap gap-3 text-sm">
                   <span className="text-slate-400">
                     Sua resposta: <b className={isCorrect ? 'text-emerald-400' : 'text-red-400'}>{q.selected ?? '—'}</b>

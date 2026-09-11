@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS "turma_members" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "turma_members_turmaId_userId_key" ON "turma_members"("turmaId", "userId");
 
--- ─── Catálogo (disciplina → tópico → subtópico) ─────────────────────────
+-- ─── Catálogo (disciplina → conteúdo → tópico → subtópico) ────────────────
 CREATE TABLE IF NOT EXISTS "catalog_items" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
@@ -301,3 +301,7 @@ ALTER TABLE "attempts" ADD CONSTRAINT "attempts_submitted_has_date"
 ALTER TABLE "questions" DROP CONSTRAINT IF EXISTS "questions_gabarito_origin_check";
 ALTER TABLE "questions" ADD CONSTRAINT "questions_gabarito_origin_check"
     CHECK ("gabaritoOrigin" IS NULL OR "gabaritoOrigin" IN ('document', 'heuristic', 'ai', 'professor'));
+
+ALTER TABLE "catalog_items" DROP CONSTRAINT IF EXISTS "catalog_items_level_check";
+ALTER TABLE "catalog_items" ADD CONSTRAINT "catalog_items_level_check"
+    CHECK ("level" BETWEEN 1 AND 4);

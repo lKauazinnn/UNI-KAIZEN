@@ -79,7 +79,7 @@ export default function ExamPreview() {
         }
         actions={
           <>
-            {!isPublished && (
+            {exam.status === 'draft' && (
               <Button variant="success" onClick={() => setConfirmPublish(true)} loading={busy}>
                 <Send size={16} /> Publicar
               </Button>
@@ -112,7 +112,7 @@ export default function ExamPreview() {
           <Card key={eq.id} className="!p-5">
             {/* B20: a pré-visualização é a experiência do ALUNO. O gabarito não
                 aparece aqui — ele é conferido na tela de revisão da questão. */}
-            <QuestionView question={eq.questions as any} mode="exam" index={index} compact />
+            <QuestionView question={eq.questions as any} mode="exam" readOnly index={index} compact />
           </Card>
         ))}
       </div>

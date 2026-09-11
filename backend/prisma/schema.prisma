@@ -88,11 +88,11 @@ model TurmaMember {
   @@map("turma_members")
 }
 
-// Catálogo único: disciplina → tópico → subtópico opcional.
+// Catálogo único: disciplina → conteúdo → tópico → subtópico opcional.
 model CatalogItem {
   id             String   @id @default(uuid())
   organizationId String
-  level          Int      // 1 = disciplina, 2 = tópico, 3 = subtópico
+   level          Int      // 1 = disciplina, 2 = conteúdo, 3 = tópico, 4 = subtópico
   name           String
   parentId       String?
   createdAt      DateTime @default(now())

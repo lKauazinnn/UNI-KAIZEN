@@ -22,8 +22,8 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      await register({ name, email, password, role, organizationSlug });
-      navigate(role === 'aluno' ? '/aluno/inicio' : '/inicio');
+      const user = await register({ name, email, password, role, organizationSlug });
+      navigate(user.role === 'aluno' ? '/aluno/inicio' : user.role === 'admin' ? '/admin/dashboard' : '/inicio');
     } catch (err) {
       setError(apiError(err));
     } finally {

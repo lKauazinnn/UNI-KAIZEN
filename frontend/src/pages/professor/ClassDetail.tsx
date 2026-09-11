@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, UserPlus, ClipboardList, FileText, Check, X, Megaphone, Pencil, Archive } from 'lucide-react';
+import { ArrowLeft, UserPlus, ClipboardList, FileText, Megaphone, Pencil, Archive, Search } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { TurmaDetail, Notice } from '../../types';
 import { PageHeader, Card, Button, Badge, Spinner, EmptyState, Modal, Input, Textarea, ConfirmDialog } from '../../components/ui';
@@ -12,7 +12,9 @@ export default function ClassDetail() {
   const [loading, setLoading] = useState(true);
 
   const [linkOpen, setLinkOpen] = useState(false);
-  const [linkEmail, setLinkEmail] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentResults, setStudentResults] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string; email: string } | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csv, setCsv] = useState('');
   const [csvResult, setCsvResult] = useState<any[] | null>(null);
@@ -22,7 +24,6 @@ export default function ClassDetail() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [removeId, setRemoveId] = useState<string | null>(null);
-  const [createdStudent, setCreatedStudent] = useState<{ name?: string; email: string; password: string } | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -32,11 +33,24 @@ export default function ClassDetail() {
     setLoading(true);
     Promise.all([api.get(`/classes/${id}`), api.get(`/notices/turma/${id}`)])
       .then(([t, n]) => { setTurma(t.data); setNotices(n.data); })
-      .catch(() => {})
+      .catch((err) => setError(apiError(err)))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [id]);
+
+  useEffect(() => {
+    if (!linkOpen || studentSearch.trim().length < 2 || !id) {
+      setStudentResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api.get(`/classes/${id}/students/search`, { params: { q: studentSearch.trim() } })
+        .then(({ data }) => setStudentResults(Array.isArray(data) ? data : []))
+        .catch((err) => setError(apiError(err)));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [id, linkOpen, studentSearch]);
 
   const openRename = () => {
     setError('');
@@ -76,17 +90,16 @@ export default function ClassDetail() {
 
   const linkStudent = async (e: FormEvent) => {
     e.preventDefault();
+    if (!selectedStudent) return;
     setError('');
     setSaving(true);
     try {
-      const { data } = await api.post(`/classes/${id}/students/link`, { email: linkEmail });
-      if (data?.tempPassword) {
-        setCreatedStudent({ name: data.student?.name, email: data.student?.email ?? linkEmail, password: data.tempPassword });
-      } else {
-        setFeedback(`Aluno ${data.student?.name ?? linkEmail} vinculado com sucesso.`);
-      }
+      const { data } = await api.post(`/classes/${id}/students/link`, { userId: selectedStudent.id });
+      setFeedback(`Aluno ${data.student?.name ?? selectedStudent.name} vinculado com sucesso.`);
       setLinkOpen(false);
-      setLinkEmail('');
+      setStudentSearch('');
+      setStudentResults([]);
+      setSelectedStudent(null);
       load();
     } catch (err) {
       setError(apiError(err));
@@ -111,16 +124,15 @@ export default function ClassDetail() {
     }
   };
 
-  const decide = async (memberId: string, approve: boolean) => {
-    await api.post(`/classes/${id}/join-requests/${memberId}`, { approve });
-    load();
-  };
-
   const removeStudent = async () => {
     if (!removeId) return;
-    await api.delete(`/classes/${id}/students/${removeId}`);
-    setRemoveId(null);
-    load();
+    try {
+      await api.delete(`/classes/${id}/students/${removeId}`);
+      setRemoveId(null);
+      load();
+    } catch (err) {
+      setError(apiError(err));
+    }
   };
 
   const sendNotice = async (e: FormEvent) => {
@@ -140,7 +152,6 @@ export default function ClassDetail() {
     }
   };
 
-  const pending = (turma?.members ?? []).filter((m) => m.status === 'pendente');
   const active = (turma?.members ?? []).filter((m) => m.status === 'ativo');
 
   if (loading) return <Spinner label="Carregando turma..." />;
@@ -180,33 +191,10 @@ export default function ClassDetail() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {pending.length > 0 && (
-            <Card className="border-amber-500/20">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse-soft" />
-                <h2 className="font-bold text-slate-100">Solicitações de vínculo ({pending.length})</h2>
-              </div>
-              <div className="space-y-2">
-                {pending.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border)] px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-200 truncate">{m.users?.name ?? 'Aluno'}</p>
-                      <p className="text-xs text-slate-400 truncate">{m.users?.email}</p>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <Button size="sm" variant="outline" onClick={() => decide(m.id, false)}><X size={14} /> Recusar</Button>
-                      <Button size="sm" variant="success" onClick={() => decide(m.id, true)}><Check size={14} /> Aprovar</Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
           <Card>
             <h2 className="font-bold text-slate-100 mb-4">Alunos ({active.length})</h2>
             {active.length === 0 ? (
-              <EmptyState title="Sem alunos na turma" description="Vincule por e-mail, importe um CSV, ou os alunos podem solicitar vínculo." />
+              <EmptyState title="Sem alunos na turma" description="Use Vincular aluno para pesquisar e confirmar um aluno cadastrado." />
             ) : (
               <div className="space-y-2">
                 {active.map((m) => (
@@ -287,15 +275,33 @@ export default function ClassDetail() {
 
       {/* Vincular aluno */}
       <Modal open={linkOpen} onClose={() => setLinkOpen(false)} title="Vincular aluno">
-        <p className="text-sm text-slate-400 mb-4">
-          Se o e-mail não existir, o aluno será criado com uma senha temporária exibida a seguir.
-        </p>
+        <p className="text-sm text-slate-400 mb-4">Pesquise pelo nome ou e-mail, selecione o aluno e confirme o vínculo.</p>
         <form onSubmit={linkStudent} className="space-y-4">
           {error && <div className="rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3">{error}</div>}
-          <Input label="E-mail do aluno" type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="aluno@escola.com" required />
+          <div className="relative">
+            <Input label="Pesquisar aluno" value={studentSearch} onChange={(e) => { setStudentSearch(e.target.value); setSelectedStudent(null); }} placeholder="Nome ou e-mail" autoFocus />
+            <Search size={16} className="absolute right-3 bottom-3 text-slate-400" />
+          </div>
+          {studentSearch.trim().length >= 2 && (
+            <div className="max-h-52 overflow-y-auto space-y-2">
+              {studentResults.map((student) => (
+                <button
+                  type="button"
+                  key={student.id}
+                  onClick={() => setSelectedStudent(student)}
+                  className={`w-full text-left rounded-xl border px-4 py-3 transition ${selectedStudent?.id === student.id ? 'border-primary-500 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'}`}
+                >
+                  <p className="font-semibold text-slate-200">{student.name}</p>
+                  <p className="text-xs text-slate-400">{student.email}</p>
+                </button>
+              ))}
+              {studentResults.length === 0 && <p className="text-sm text-slate-500 py-2">Nenhum aluno disponível para este filtro.</p>}
+            </div>
+          )}
+          {selectedStudent && <p className="text-sm text-primary-300">Selecionado: {selectedStudent.name} ({selectedStudent.email})</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="ghost" onClick={() => setLinkOpen(false)}>Cancelar</Button>
-            <Button type="submit" loading={saving}>Vincular</Button>
+            <Button type="submit" loading={saving} disabled={!selectedStudent}>Confirmar vínculo</Button>
           </div>
         </form>
       </Modal>
@@ -368,17 +374,6 @@ export default function ClassDetail() {
         danger
       />
 
-      <Modal open={!!createdStudent} onClose={() => setCreatedStudent(null)} title="Aluno criado">
-        <p className="text-sm text-slate-400 mb-2">
-          O aluno <b className="text-slate-200">{createdStudent?.name ?? createdStudent?.email}</b> foi criado com a senha temporária abaixo. Repasse a senha para o primeiro acesso.
-        </p>
-        <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 font-mono text-lg font-bold text-primary-300 text-center">
-          {createdStudent?.password}
-        </div>
-        <div className="mt-5 flex justify-end">
-          <Button onClick={() => setCreatedStudent(null)}>Entendi</Button>
-        </div>
-      </Modal>
     </div>
   );
 }

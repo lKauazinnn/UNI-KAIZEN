@@ -162,7 +162,7 @@ export class ResultController {
 
       const { data: examQuestions } = await supabase
         .from('exam_questions')
-        .select('"order", questions(id, number, statement, gabarito)')
+        .select('"order", questions(id, number, statement, alternatives, images, gabarito)')
         .eq('examId', examId)
         .order('order', { ascending: true });
       // Mesmo critério do submit e do painel do professor (B24).
@@ -182,6 +182,8 @@ export class ResultController {
         return {
           number: q.number ?? (eq as any).order,
           statement: q.statement,
+          alternatives: q.alternatives ?? [],
+          images: q.images ?? [],
           gabarito: q.gabarito,
           selected: answer?.selected ?? null,
           isCorrect: answer?.isCorrect ?? null,

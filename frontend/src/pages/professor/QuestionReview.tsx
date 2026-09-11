@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Save, Trash2, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, Pencil, Save, Trash2 } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { Question, CatalogItem } from '../../types';
 import { PageHeader, Button, Badge, Spinner, Textarea, Input, Select, ConfirmDialog } from '../../components/ui';
@@ -36,7 +36,7 @@ export default function QuestionReview() {
         setGabarito(q.data.gabarito?.toUpperCase() ?? '');
         setCatalogItemId(q.data.catalogItemId ?? '');
       })
-      .catch(() => {})
+      .catch((err) => setError(apiError(err)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -80,28 +80,14 @@ export default function QuestionReview() {
     }
   };
 
-  const setStatus = async (status: 'approved' | 'rejected') => {
-    setSaving(true);
+  const remove = async () => {
     try {
-      if (status === 'approved') {
-        const { data } = await api.post(`/questions/${id}/approve`);
-        setQuestion((prev) => ({ ...(prev as Question), ...(data as Question), catalogItemId: prev?.catalogItemId, catalog_items: prev?.catalog_items }));
-      } else {
-        const { data } = await api.patch(`/questions/${id}`, { statement: question!.statement, alternatives: question!.alternatives });
-        setQuestion((prev) => ({ ...(prev as Question), ...(data as Question), status: 'pending', catalogItemId: prev?.catalogItemId, catalog_items: prev?.catalog_items }));
-      }
-      setFeedback(status === 'approved' ? 'Questão aprovada para o banco.' : 'Questão marcada como pendente.');
-      setTimeout(() => setFeedback(''), 3000);
+      await api.delete(`/questions/${id}`);
+      navigate('/professor/questoes');
     } catch (err) {
       setError(apiError(err));
-    } finally {
-      setSaving(false);
+      setConfirmDelete(false);
     }
-  };
-
-  const remove = async () => {
-    await api.delete(`/questions/${id}`);
-    navigate('/professor/questoes');
   };
 
   const setAlt = (index: number, text: string) => {
@@ -132,9 +118,6 @@ export default function QuestionReview() {
             <>
               <Button variant="outline" onClick={startEdit}><Pencil size={16} /> Editar</Button>
               <Button variant="danger" onClick={() => setConfirmDelete(true)} className="!bg-transparent !text-red-400 hover:bg-red-500/10"><Trash2 size={16} /> Excluir</Button>
-              {question.status !== 'approved' && (
-                <Button variant="success" onClick={() => setStatus('approved')} loading={saving}><CheckCircle2 size={16} /> Aprovar</Button>
-              )}
             </>
           ) : (
             <Button onClick={save} loading={saving}><Save size={16} /> Salvar alterações</Button>
@@ -165,7 +148,11 @@ export default function QuestionReview() {
                   </span>
                   <Input value={alt.text} onChange={(e) => setAlt(i, e.target.value)} className="flex-1" />
                   {alternatives.length > 2 && (
-                    <button className="text-slate-500 hover:text-red-400" onClick={() => setAlternatives(alternatives.filter((_, j) => j !== i))}>✕</button>
+                    <button
+                      type="button"
+                      className="text-slate-500 hover:text-red-400"
+                      onClick={() => setAlternatives(alternatives.filter((_, j) => j !== i).map((item, j) => ({ ...item, letter: 'ABCDE'[j] })))}
+                    >✕</button>
                   )}
                 </div>
               ))}
@@ -200,11 +187,16 @@ export default function QuestionReview() {
               {catalog.map((dis) => (
                 <optgroup key={dis.id} label={dis.name}>
                   <option value={dis.id}>{dis.name} (disciplina)</option>
-                  {(dis.topics ?? []).map((topic) => (
-                    <Fragment key={topic.id}>
-                      <option value={topic.id}>&nbsp;&nbsp;{topic.name}</option>
-                      {(topic.subtopics ?? []).map((sub) => (
-                        <option key={sub.id} value={sub.id}>&nbsp;&nbsp;&nbsp;&nbsp;{sub.name}</option>
+                  {(dis.contents ?? dis.topics ?? []).map((content) => (
+                    <Fragment key={content.id}>
+                      <option value={content.id}>&nbsp;&nbsp;{content.name} (conteúdo)</option>
+                      {(content.topics ?? content.subtopics ?? []).map((topic) => (
+                        <Fragment key={topic.id}>
+                          <option value={topic.id}>&nbsp;&nbsp;&nbsp;&nbsp;{topic.name} (tópico)</option>
+                          {(topic.subtopics ?? []).map((sub) => (
+                            <option key={sub.id} value={sub.id}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{sub.name} (subtópico)</option>
+                          ))}
+                        </Fragment>
                       ))}
                     </Fragment>
                   ))}
