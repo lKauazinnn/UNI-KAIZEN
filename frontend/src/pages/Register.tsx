@@ -1,7 +1,7 @@
-﻿import { FormEvent, useState } from 'react';
+﻿import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiError } from '../services/api';
+import { api, apiError } from '../services/api';
 import { AuthShell, AuthLink } from '../components/AuthShell';
 import { Button, Input, Select } from '../components/ui';
 
@@ -16,6 +16,21 @@ export default function Register() {
   const [organizationSlug, setOrganizationSlug] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
+  // Só o professor cria instituição nova. O aluno escolhe uma existente: digitar
+  // o nome à mão criava uma organização paralela e ele nunca aparecia para o
+  // professor na hora de vincular à turma.
+  const [novaOrg, setNovaOrg] = useState(false);
+
+  useEffect(() => {
+    api
+      .get('/auth/organizations')
+      .then(({ data }) => setOrganizations(Array.isArray(data) ? data : []))
+      .catch(() => setOrganizations([]));
+  }, []);
+
+  // Sem nenhuma organização cadastrada, o primeiro acesso precisa poder criar.
+  const precisaCriar = novaOrg || organizations.length === 0;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -64,14 +79,48 @@ export default function Register() {
           <option value="aluno">Aluno</option>
           <option value="professor">Professor</option>
         </Select>
-        <Input
-          label="Organização"
-          value={organizationSlug}
-          onChange={(e) => setOrganizationSlug(e.target.value)}
-          placeholder="Ex.: colegio-einstein"
-          hint="Professores e alunos da mesma instituição usam o mesmo nome."
-          required
-        />
+        {precisaCriar ? (
+          <Input
+            label="Organização"
+            value={organizationSlug}
+            onChange={(e) => setOrganizationSlug(e.target.value)}
+            placeholder="Ex.: colegio-einstein"
+            hint={
+              organizations.length === 0
+                ? 'Nenhuma instituição cadastrada ainda — esta será a primeira.'
+                : 'Atenção: um nome diferente cria uma instituição NOVA, separada das existentes.'
+            }
+            required
+          />
+        ) : (
+          <Select
+            label="Organização"
+            value={organizationSlug}
+            onChange={(e) => setOrganizationSlug(e.target.value)}
+            hint="Escolha a instituição em que você já estuda ou leciona."
+            required
+          >
+            <option value="">Selecione a instituição...</option>
+            {organizations.map((org) => (
+              <option key={org.slug} value={org.slug}>
+                {org.name}
+              </option>
+            ))}
+          </Select>
+        )}
+
+        {organizations.length > 0 && role === 'professor' && (
+          <button
+            type="button"
+            onClick={() => {
+              setNovaOrg(!novaOrg);
+              setOrganizationSlug('');
+            }}
+            className="text-xs font-semibold text-primary-300 hover:text-primary-200"
+          >
+            {novaOrg ? '← Escolher uma instituição existente' : '+ Minha instituição não está na lista'}
+          </button>
+        )}
         <Button type="submit" className="w-full" loading={loading}>
           Criar conta
         </Button>

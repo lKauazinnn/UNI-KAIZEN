@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileQuestion, ChevronRight, CheckCheck, Search, X, AlertTriangle, FileUp, FolderTree } from 'lucide-react';
+import { FileQuestion, ChevronRight, CheckCheck, CheckCircle2, Search, X, AlertTriangle, FileUp, FolderTree } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { Question } from '../../types';
 import { PageHeader, Card, Badge, Spinner, EmptyState, Button, Input, ConfirmDialog } from '../../components/ui';
@@ -26,6 +26,20 @@ export default function Questions() {
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [confirmBatch, setConfirmBatch] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  const approveOne = async (questionId: string) => {
+    setBatchError('');
+    setApprovingId(questionId);
+    try {
+      await api.post(`/questions/${questionId}/approve`);
+      load();
+    } catch (err) {
+      setBatchError(apiError(err));
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -64,13 +78,17 @@ export default function Questions() {
     pending: (questions).filter((q) => q.status === 'pending').length,
   };
 
+  // Na aba "Rejeitadas" o lote revalida o que já foi rejeitado: depois de
+  // corrigir o gabarito de várias questões, elas voltam ao banco de uma vez.
   const approveValidBatch = async () => {
     setConfirmBatch(false);
     setBatchMsg('');
     setBatchError('');
     setBatchRejected([]);
     try {
-      const { data } = await api.post('/questions/approve-valid');
+      const { data } = await api.post('/questions/approve-valid', null, {
+        params: tab === 'rejected' ? { status: 'rejected' } : undefined,
+      });
       const rejected: BatchRejection[] = data.rejected ?? [];
       setBatchMsg(`Lote processado: ${data.approved} aprovada(s), ${rejected.length} rejeitada(s) por invalidez.`);
       // B17: os motivos ficam na tela até o professor fechar o painel.
@@ -102,9 +120,10 @@ export default function Questions() {
             <Link to="/professor/catalogo">
               <Button variant="ghost"><FolderTree size={16} /> Catálogo</Button>
             </Link>
-            {tab === 'pending' && (
-       <Button variant="success" onClick={() => setConfirmBatch(true)}>
-                 <CheckCheck size={16} /> Aprovar todas as questões
+            {(tab === 'pending' || tab === 'rejected') && (
+              <Button variant="success" onClick={() => setConfirmBatch(true)}>
+                <CheckCheck size={16} />
+                {tab === 'rejected' ? 'Revalidar rejeitadas' : 'Aprovar todas as questões'}
               </Button>
             )}
           </div>
@@ -230,9 +249,21 @@ export default function Questions() {
                     </p>
                   )}
                 </div>
-                <Link to={`/professor/questoes/${q.id}/revisar`} className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-300" title="Revisar">
-                  <ChevronRight size={18} />
-                </Link>
+                <div className="flex shrink-0 items-center gap-1">
+                  {q.status !== 'approved' && (
+                    <button
+                      onClick={() => approveOne(q.id)}
+                      disabled={approvingId === q.id}
+                      className="p-2 rounded-lg text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400 disabled:opacity-40"
+                      title="Aprovar esta questão"
+                    >
+                      <CheckCircle2 size={18} />
+                    </button>
+                  )}
+                  <Link to={`/professor/questoes/${q.id}/revisar`} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-300" title="Revisar">
+                    <ChevronRight size={18} />
+                  </Link>
+                </div>
               </div>
             </Card>
           ))}
@@ -243,9 +274,13 @@ export default function Questions() {
         open={confirmBatch}
         onClose={() => setConfirmBatch(false)}
         onConfirm={approveValidBatch}
-        title="Aprovar todas as questões"
-        message="As questões pendentes válidas entrarão no banco aprovado. Questões com dados incompletos ficarão marcadas para correção."
-        confirmLabel="Aprovar todas"
+        title={tab === 'rejected' ? 'Revalidar questões rejeitadas' : 'Aprovar todas as questões'}
+        message={
+          tab === 'rejected'
+            ? 'As questões rejeitadas serão validadas de novo. As que você já corrigiu entram no banco aprovado; as que continuam incompletas seguem marcadas com o motivo.'
+            : 'As questões pendentes válidas entrarão no banco aprovado. Questões com dados incompletos ficarão marcadas para correção.'
+        }
+        confirmLabel={tab === 'rejected' ? 'Revalidar' : 'Aprovar todas'}
       />
     </div>
   );

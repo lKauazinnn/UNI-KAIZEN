@@ -28,6 +28,24 @@ export interface ExtractedQuestion {
   gabarito?: string;
   gabaritoOrigin?: GabaritoOrigin;
   gabaritoConfidence?: number;
+  /** Assinatura do início do bloco, usada para casar a questão com o recorte visual. */
+  anchor?: string;
+}
+
+/**
+ * Assinatura estável do início de um bloco de questão.
+ *
+ * O texto e o recorte visual são extraídos por caminhos diferentes (pdf-parse x
+ * pdf.js), então casá-los pelo número da questão é frágil: basta uma das duas
+ * numerações divergir e TODA questão recebe a imagem errada — ou nenhuma. A
+ * âncora compara o próprio texto do começo do bloco, que é igual nos dois lados.
+ */
+export function blockAnchor(text: string): string {
+  return text
+    .normalize('NFD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 48);
 }
 
 export interface ExtractionResult {
@@ -37,11 +55,30 @@ export interface ExtractionResult {
 
 // ─── Regexes helpers ──────────────────────────────────────────────────────
 
-// Número que abre uma questão: "1." "1)" "01." "QUESTÃO 1" "Questão 3"
-const QUESTION_START_RE =
-  /^(?:\s*)(?:[\s\S]*?\b(?:quest[ãa]o|questao|q\.?|quest\.?)\s*[\.:]?\s*)?(\d+)\s*[\.\)\]\:]\s*(?=\S)/im;
+// Número que abre uma questão. São duas formas distintas e elas NÃO podem ser
+// tratadas pelo mesmo padrão:
+//  - cabeçalho nomeado ("QUESTÃO 01", "Questão 3 -", "Q. 7"): a pontuação depois
+//    do número é opcional, porque a palavra "questão" já identifica o início;
+//  - número solto ("1.", "01)", "12 -"): aqui a pontuação é obrigatória, senão
+//    qualquer ano ou valor numérico no meio do texto viraria uma questão nova.
+// A versão anterior exigia pontuação nos dois casos, então provas no formato
+// "QUESTÃO 01" ficavam sem número e recebiam um contador sequencial — foi isso
+// que desalinhou as questões dos recortes de imagem.
+const QUESTION_NAMED_RE = /^\s*(?:quest(?:[ãa]o|ao)|quest\.?|q)\s*[\.\:\-–]?\s*(\d{1,3})\b/i;
+const QUESTION_NUMERIC_RE = /^\s*(\d{1,3})\s*[\.\)\]\:\-–]\s*(?=\S)/;
 const QUESTION_HEADER_RE =
-  /^([^(\r\n]*?\b(?:[qQ]uest[ãa]o|[qQ]uestao|\bQ\b)\s*\.?\s*\d+[\.\)\]]?\s*[-–:]?\s*)/;
+  /^([^(\r\n]*?\b(?:quest(?:[ãa]o|ao)|q)\s*\.?\s*\d{1,3}[\.\)\]]?\s*[-–:]?\s*)/i;
+
+/** Número da questão a partir da primeira linha não vazia do bloco. */
+function questionNumberFromBlock(block: string): number | undefined {
+  const firstLine = block.split(/\r?\n/).find((l) => l.trim().length > 0);
+  if (!firstLine) return undefined;
+  const named = QUESTION_NAMED_RE.exec(firstLine);
+  if (named) return parseInt(named[1], 10);
+  const numeric = QUESTION_NUMERIC_RE.exec(firstLine);
+  if (numeric) return parseInt(numeric[1], 10);
+  return undefined;
+}
 
 // Alternativa: "(A) texto" ou "A) texto"
 const ALTERNATIVE_RE = /^\(?([A-Ea-e])\)\s*(.*)$/;
@@ -84,8 +121,7 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
   for (const block of blocks) {
     if (!block || !block.trim()) continue;
 
-    const numberedMatch = QUESTION_START_RE.exec(block);
-    let number: number | undefined = numberedMatch ? parseInt(numberedMatch[1], 10) : undefined;
+    let number: number | undefined = questionNumberFromBlock(block);
 
     let remainder = block;
     const headerMatch = QUESTION_HEADER_RE.exec(remainder);
@@ -133,20 +169,27 @@ export async function extractQuestionsFromPdf(buffer: Buffer): Promise<Extractio
       }
     }
 
-    if (!number) {
+    // Sem número no documento, a numeração continua de onde parou — começar
+    // um contador independente do zero fazia a questão sem número colidir com
+    // uma questão numerada e as duas disputarem o mesmo recorte de imagem.
+    if (number === undefined) {
       unnamedCounter += 1;
+      number = unnamedCounter;
+    } else {
+      unnamedCounter = number;
     }
 
     // Sem alternativas não é uma questão de múltipla escolha utilizável — mas
     // ainda assim entra na revisão para o professor decidir.
     questions.push({
-      number: number ?? unnamedCounter,
+      number,
       statement: statement || '(enunciado não identificado — revisar)',
       alternatives,
       images,
       gabarito,
       gabaritoOrigin,
       gabaritoConfidence,
+      anchor: blockAnchor(block),
     });
   }
 
@@ -240,22 +283,37 @@ function splitIntoQuestionBlocks(text: string): string[] {
     return true;
   };
 
+  // Tudo que vem ANTES da primeira questão é capa/título do caderno, não
+  // questão. Sem esta trava, "QUESTÕES VUNESP - GEOGRAFIA - POPULAÇÃO" virava a
+  // questão 1 e empurrava todas as outras uma casa — o que desalinhava os
+  // recortes de imagem e enchia a fila de revisão com uma questão fantasma.
+  let seenFirstQuestion = false;
+
   for (const line of lines) {
     // Nada depois do bloco de gabarito pertence a uma questão
     if (GABARITO_HEADER_RE.test(line.trim())) break;
     if (isQuestionStart(line)) {
-      if (current.length > 0) {
+      if (current.length > 0 && seenFirstQuestion) {
         const blk = current.join('\n').trim();
         if (!isInstructionBlock(blk)) blocks.push(blk);
       }
+      seenFirstQuestion = true;
       current = [line];
     } else {
       current.push(line);
     }
   }
-  if (current.length > 0) {
+  if (current.length > 0 && seenFirstQuestion) {
     const blk = current.join('\n').trim();
     if (!isInstructionBlock(blk)) blocks.push(blk);
+  }
+
+  // Documento sem nenhum cabeçalho reconhecível (uma questão avulsa, um recorte
+  // colado): devolve o texto inteiro em vez de devolver nada.
+  if (!seenFirstQuestion) {
+    const blk = lines.join('\n').trim();
+    if (blk && !isInstructionBlock(blk)) return [blk];
+    return [];
   }
   return blocks.filter((b) => b.length > 0);
 }

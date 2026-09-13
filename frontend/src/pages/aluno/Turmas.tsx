@@ -33,8 +33,16 @@ export default function AlunoTurmas() {
         <Card>
           <EmptyState
             title="Você ainda não participa de nenhuma turma"
-            description="Quando um professor vincular seu usuário, a turma aparecerá aqui."
+            description="Quando um professor vincular seu usuário, a turma aparecerá aqui. Você também pode pedir entrada por conta própria."
           />
+          <div className="flex justify-center pb-2">
+            <Link
+              to="/aluno/solicitacoes"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-primary-500 hover:bg-primary-400 shadow-lg shadow-primary-500/20"
+            >
+              Solicitar entrada em uma turma <ArrowRight size={14} />
+            </Link>
+          </div>
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { logAudit } from '../lib/audit';
+import { suggestGabarito, hasAiConfigured } from '../lib/ai';
 
 const updateSchema = z.object({
   statement: z.string().min(1, 'Enunciado obrigatório'),
@@ -95,7 +96,7 @@ export class QuestionController {
 
       const { data: existing } = await supabase
         .from('questions')
-        .select('organizationId, gabarito, gabaritoOrigin')
+        .select('organizationId, gabarito, gabaritoOrigin, status')
         .eq('id', id)
         .single();
       if (!existing || existing.organizationId !== req.organizationId) {
@@ -126,6 +127,15 @@ export class QuestionController {
           : null;
       }
       if (parsed.catalogItemId === null) updates.classificationSource = null;
+
+      // Editar é justamente o ato de consertar o que foi rejeitado. Manter o
+      // status 'rejected' e o motivo antigo deixava a questão presa: ela some
+      // da fila de pendentes, a aprovação em lote não a revisita e o professor
+      // continua vendo "sem gabarito" mesmo depois de preencher o gabarito.
+      if (existing.status === 'rejected') {
+        updates.status = 'pending';
+        updates.rejectionReason = null;
+      }
 
       const { data, error } = await supabase
         .from('questions')
@@ -208,8 +218,9 @@ export class QuestionController {
 
       const { data, error } = await supabase
         .from('questions')
-        .update({ status: 'approved', updatedAt: new Date().toISOString() })
+        .update({ status: 'approved', rejectionReason: null, updatedAt: new Date().toISOString() })
         .eq('id', id)
+        .eq('organizationId', req.organizationId!)
         .select()
         .single();
       if (error || !data) return res.status(500).json({ error: 'Erro ao aprovar questão' });
@@ -226,11 +237,17 @@ export class QuestionController {
   async approveValidBatch(req: AuthRequest, res: Response) {
     try {
       const { importJobId } = req.query;
+
+      // `?status=rejected` revalida o que já foi rejeitado: depois de corrigir
+      // o gabarito de várias questões de uma vez, o professor precisa conseguir
+      // devolvê-las ao banco sem reabrir uma por uma.
+      const target = req.query.status === 'rejected' ? 'rejected' : 'pending';
+
       let query = supabase
         .from('questions')
         .select('id, number, status')
         .eq('organizationId', req.organizationId!)
-        .eq('status', 'pending');
+        .eq('status', target);
       if (importJobId) query = query.eq('importJobId', String(importJobId));
 
       const { data: pending, error } = await query;
@@ -245,7 +262,7 @@ export class QuestionController {
         if (validity.valid) {
           const { error: approveError } = await supabase
             .from('questions')
-            .update({ status: 'approved', updatedAt: new Date().toISOString() })
+            .update({ status: 'approved', rejectionReason: null, updatedAt: new Date().toISOString() })
             .eq('id', q.id);
           if (approveError) return res.status(500).json({ error: 'Erro ao aprovar lote de questões' });
           approved.push(q.id);
@@ -271,6 +288,67 @@ export class QuestionController {
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: 'Erro ao aprovar questões' });
+    }
+  }
+
+  // Sugestão de gabarito pela IA para uma questão que veio sem resposta.
+  // Não grava nada sozinha: devolve o palpite para o professor aceitar ou não.
+  async suggestGabarito(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { data: question } = await supabase
+        .from('questions')
+        .select('statement, alternatives, gabarito')
+        .eq('id', id)
+        .eq('organizationId', req.organizationId!)
+        .single();
+      if (!question) return res.status(404).json({ error: 'Questão não encontrada' });
+
+      if (!hasAiConfigured()) {
+        return res.status(503).json({ error: 'Nenhuma chave de IA configurada (GEMINI_API_KEY ou GROQ_API_KEY).' });
+      }
+
+      const alternatives = Array.isArray(question.alternatives)
+        ? question.alternatives.filter((a: any) => a?.text?.trim())
+        : [];
+
+      const suggestion = await suggestGabarito(question.statement ?? '', alternatives);
+      if (!suggestion) {
+        return res.status(422).json({ error: 'A IA não conseguiu determinar a resposta desta questão com segurança.' });
+      }
+
+      const apply = req.query.apply === 'true';
+      if (apply) {
+        const { error } = await supabase
+          .from('questions')
+          .update({
+            gabarito: suggestion.gabarito,
+            gabaritoOrigin: 'ai',
+            gabaritoConfidence: suggestion.confidence,
+            // Sugerir gabarito é consertar a causa da rejeição: a questão volta
+            // para a fila de revisão em vez de continuar presa em 'rejected'.
+            status: 'pending',
+            rejectionReason: null,
+            updatedAt: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .eq('organizationId', req.organizationId!);
+        if (error) return res.status(500).json({ error: 'Erro ao gravar o gabarito sugerido' });
+
+        await logAudit({
+          organizationId: req.organizationId!,
+          userId: req.userId!,
+          action: 'update',
+          entityType: 'question',
+          entityId: id,
+          details: { gabaritoSugeridoPorIa: suggestion.gabarito, confidence: suggestion.confidence },
+        });
+      }
+
+      return res.json({ ...suggestion, applied: apply });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao sugerir gabarito' });
     }
   }
 

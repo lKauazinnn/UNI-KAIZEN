@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Save, Trash2, CheckCircle2, Sparkles } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { Question, CatalogItem } from '../../types';
 import { PageHeader, Button, Badge, Spinner, Textarea, Input, Select, ConfirmDialog } from '../../components/ui';
@@ -18,6 +18,8 @@ export default function QuestionReview() {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
 
   const [statement, setStatement] = useState('');
   const [alternatives, setAlternatives] = useState<{ letter: string; text: string }[]>([]);
@@ -80,6 +82,46 @@ export default function QuestionReview() {
     }
   };
 
+  // O backend já expunha POST /questions/:id/approve, mas nenhuma tela chamava:
+  // uma questão rejeitada só podia voltar ao banco por aprovação em lote, que
+  // ignora o status 'rejected'. Sem este botão, corrigir o gabarito não
+  // adiantava nada — a questão ficava presa fora do banco aprovado.
+  const approve = async () => {
+    setError('');
+    setApproving(true);
+    try {
+      await api.post(`/questions/${id}/approve`);
+      const { data: fresh } = await api.get(`/questions/${id}`);
+      setQuestion(fresh as Question);
+      setFeedback('Questão aprovada e disponível no banco de questões.');
+      setTimeout(() => setFeedback(''), 4000);
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const suggestGabarito = async () => {
+    setError('');
+    setSuggesting(true);
+    try {
+      const { data } = await api.post(`/questions/${id}/suggest-gabarito?apply=true`);
+      const { data: fresh } = await api.get(`/questions/${id}`);
+      setQuestion(fresh as Question);
+      setGabarito(fresh.gabarito?.toUpperCase() ?? '');
+      setFeedback(
+        `A IA sugeriu o gabarito "${data.gabarito}"${
+          data.rationale ? ` — ${data.rationale}` : ''
+        }. Confira antes de aprovar.`
+      );
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   const remove = async () => {
     try {
       await api.delete(`/questions/${id}`);
@@ -116,6 +158,11 @@ export default function QuestionReview() {
         actions={
           !editing ? (
             <>
+              {question.status !== 'approved' && (
+                <Button variant="success" onClick={approve} loading={approving}>
+                  <CheckCircle2 size={16} /> Aprovar
+                </Button>
+              )}
               <Button variant="outline" onClick={startEdit}><Pencil size={16} /> Editar</Button>
               <Button variant="danger" onClick={() => setConfirmDelete(true)} className="!bg-transparent !text-red-400 hover:bg-red-500/10"><Trash2 size={16} /> Excluir</Button>
             </>
@@ -221,12 +268,31 @@ export default function QuestionReview() {
             </div>
           )}
 
-          {question.gabaritoOrigin === 'heuristic' && (
+          {/* Questão sem gabarito não precisa ser rejeitada: a IA resolve e
+              propõe a resposta, e o professor confirma. */}
+          {!question.gabarito && (
+            <div className="mb-4 rounded-xl border border-primary-500/20 bg-primary-500/5 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-primary-300 uppercase tracking-wide mb-1">Sem gabarito</p>
+                <p className="text-sm text-slate-300">
+                  A IA pode resolver esta questão e sugerir a resposta. Você confere antes de aprovar.
+                </p>
+              </div>
+              <Button variant="outline" onClick={suggestGabarito} loading={suggesting}>
+                <Sparkles size={16} /> Sugerir gabarito com IA
+              </Button>
+            </div>
+          )}
+
+          {(question.gabaritoOrigin === 'heuristic' || question.gabaritoOrigin === 'ai') && (
             <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-              <p className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-1">Gabarito deduzido</p>
+              <p className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-1">
+                {question.gabaritoOrigin === 'ai' ? 'Gabarito sugerido pela IA' : 'Gabarito deduzido'}
+              </p>
               <p className="text-sm text-slate-300">
-                Este gabarito não foi lido de uma tabela de respostas do PDF — foi deduzido do texto e
-                pode estar errado. Confira antes de aprovar.
+                {question.gabaritoOrigin === 'ai'
+                  ? 'Este gabarito não veio do documento — a IA resolveu a questão e propôs esta resposta. Confira antes de aprovar.'
+                  : 'Este gabarito não foi lido de uma tabela de respostas do PDF — foi deduzido do texto e pode estar errado. Confira antes de aprovar.'}
               </p>
             </div>
           )}

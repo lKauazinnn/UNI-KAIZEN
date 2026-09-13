@@ -13,6 +13,7 @@ router.patch('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => cont
 router.delete('/:id', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.remove(req, res));
 router.post('/:id/approve', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.approve(req, res));
 router.post('/:id/classificate', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.classificate(req, res));
+router.post('/:id/suggest-gabarito', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.suggestGabarito(req, res));
 router.post('/approve-valid', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.approveValidBatch(req, res));
 router.post('/approve-all', authMiddleware, requireProfessorOrAdmin, (req, res) => controller.approveValidBatch(req, res));
 

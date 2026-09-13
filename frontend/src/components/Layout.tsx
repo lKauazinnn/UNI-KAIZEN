@@ -13,6 +13,7 @@ import {
   UserCog,
   Sun,
   Moon,
+  MessageSquarePlus,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -29,6 +30,7 @@ const navProfessor = [
   { to: '/professor/questoes', label: 'Questões', icon: FileQuestion },
   { to: '/professor/simulados', label: 'Simulados', icon: ClipboardList },
   { to: '/professor/resultados', label: 'Resultados', icon: BarChart3 },
+  { to: '/professor/solicitacoes', label: 'Solicitações', icon: MessageSquarePlus },
 ];
 
 // A regra das cinco áreas vale para o painel do professor; o do aluno
@@ -37,6 +39,9 @@ const navAluno = [
   { to: '/aluno/turmas', label: 'Minhas turmas', icon: Users },
   { to: '/aluno/simulados', label: 'Simulados', icon: BookOpen },
   { to: '/aluno/resultados', label: 'Meus resultados', icon: BarChart3 },
+  // O aluno precisa de um canal próprio: pedir vínculo de turma e falar com o
+  // professor sem depender de já ter sido vinculado por ele.
+  { to: '/aluno/solicitacoes', label: 'Solicitações gerais', icon: MessageSquarePlus },
 ];
 
 const navAdmin = [

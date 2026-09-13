@@ -13,6 +13,7 @@ import noticeRoutes from './routes/notice.routes';
 import auditRoutes from './routes/audit.routes';
 import adminRoutes from './routes/admin.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import requestRoutes from './routes/request.routes';
 import { MAX_UPLOAD_MB } from './controllers/import.controller';
 
 dotenv.config();
@@ -74,6 +75,7 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/solicitacoes', requestRoutes);
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Kaizen Laboratórios Educacionais API. Use /api/*.' });

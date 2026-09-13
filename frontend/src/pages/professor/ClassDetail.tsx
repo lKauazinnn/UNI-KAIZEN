@@ -39,8 +39,11 @@ export default function ClassDetail() {
 
   useEffect(load, [id]);
 
+  // Ao abrir o modal a busca vai vazia de propósito: o backend devolve os
+  // alunos disponíveis da organização, então o professor já vê quem pode
+  // vincular sem precisar adivinhar o nome.
   useEffect(() => {
-    if (!linkOpen || studentSearch.trim().length < 2 || !id) {
+    if (!linkOpen || !id) {
       setStudentResults([]);
       return;
     }
@@ -275,29 +278,36 @@ export default function ClassDetail() {
 
       {/* Vincular aluno */}
       <Modal open={linkOpen} onClose={() => setLinkOpen(false)} title="Vincular aluno">
-        <p className="text-sm text-slate-400 mb-4">Pesquise pelo nome ou e-mail, selecione o aluno e confirme o vínculo.</p>
+        <p className="text-sm text-slate-400 mb-4">
+          Estes são os alunos da sua organização que ainda não estão nesta turma. Selecione um e confirme o
+          vínculo — use a busca para filtrar por nome ou e-mail.
+        </p>
         <form onSubmit={linkStudent} className="space-y-4">
           {error && <div className="rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3">{error}</div>}
           <div className="relative">
             <Input label="Pesquisar aluno" value={studentSearch} onChange={(e) => { setStudentSearch(e.target.value); setSelectedStudent(null); }} placeholder="Nome ou e-mail" autoFocus />
             <Search size={16} className="absolute right-3 bottom-3 text-slate-400" />
           </div>
-          {studentSearch.trim().length >= 2 && (
-            <div className="max-h-52 overflow-y-auto space-y-2">
-              {studentResults.map((student) => (
-                <button
-                  type="button"
-                  key={student.id}
-                  onClick={() => setSelectedStudent(student)}
-                  className={`w-full text-left rounded-xl border px-4 py-3 transition ${selectedStudent?.id === student.id ? 'border-primary-500 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'}`}
-                >
-                  <p className="font-semibold text-slate-200">{student.name}</p>
-                  <p className="text-xs text-slate-400">{student.email}</p>
-                </button>
-              ))}
-              {studentResults.length === 0 && <p className="text-sm text-slate-500 py-2">Nenhum aluno disponível para este filtro.</p>}
-            </div>
-          )}
+          <div className="max-h-52 overflow-y-auto space-y-2">
+            {studentResults.map((student) => (
+              <button
+                type="button"
+                key={student.id}
+                onClick={() => setSelectedStudent(student)}
+                className={`w-full text-left rounded-xl border px-4 py-3 transition ${selectedStudent?.id === student.id ? 'border-primary-500 bg-primary-500/10' : 'border-[color:var(--border)] hover:border-slate-500'}`}
+              >
+                <p className="font-semibold text-slate-200">{student.name}</p>
+                <p className="text-xs text-slate-400">{student.email}</p>
+              </button>
+            ))}
+            {studentResults.length === 0 && (
+              <p className="text-sm text-slate-500 py-2">
+                {studentSearch.trim()
+                  ? 'Nenhum aluno disponível para este filtro.'
+                  : 'Nenhum aluno cadastrado nesta organização está fora da turma. Peça ao aluno para se cadastrar usando o mesmo identificador de organização.'}
+              </p>
+            )}
+          </div>
           {selectedStudent && <p className="text-sm text-primary-300">Selecionado: {selectedStudent.name} ({selectedStudent.email})</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="ghost" onClick={() => setLinkOpen(false)}>Cancelar</Button>

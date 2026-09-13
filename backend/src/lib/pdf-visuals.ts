@@ -4,6 +4,7 @@
 // PNG — preservando imagens, gráficos, mapas, tabelas e diagramas exatamente
 // como aparecem para o aluno.
 import { createCanvas, Path2D as NapiPath2D, DOMMatrix as NapiDOMMatrix } from '@napi-rs/canvas';
+import { blockAnchor } from './pdf';
 
 export interface VisualRegion {
   questionNumber: number;
@@ -11,6 +12,10 @@ export interface VisualRegion {
   buffer: Buffer; // PNG
   width: number;
   height: number;
+  /** Assinatura do texto que abre o bloco — casa o recorte com a questão extraída. */
+  anchor: string;
+  /** Posição do bloco no documento (0-based), último critério de casamento. */
+  order: number;
 }
 
 const SCALE = 2;
@@ -112,6 +117,8 @@ export async function extractVisualRegions(pdfBuffer: Buffer): Promise<VisualReg
           buffer: crop.buffer,
           width: crop.width,
           height: crop.height,
+          anchor: blockAnchor(block.text),
+          order: regions.length,
         });
       }
     }
@@ -128,6 +135,8 @@ interface Block {
   maxX: number;
   minY: number;
   maxY: number;
+  /** Texto corrido do início do bloco, de onde sai a âncora. */
+  text: string;
 }
 
 function buildBlocks(items: any[]): Block[] {
@@ -148,7 +157,7 @@ function buildBlocks(items: any[]): Block[] {
 
     if (start !== null) {
       if (current) blocks.push(current);
-      current = { number: start, minX: tx, maxX: tx + tw, minY: ty - th, maxY: ty };
+      current = { number: start, minX: tx, maxX: tx + tw, minY: ty - th, maxY: ty, text: str };
       continue;
     }
 
@@ -157,6 +166,9 @@ function buildBlocks(items: any[]): Block[] {
     current.maxX = Math.max(current.maxX, tx + tw);
     current.minY = Math.min(current.minY, ty - th);
     current.maxY = Math.max(current.maxY, ty);
+    // A âncora só precisa do começo do bloco; parar cedo evita carregar a
+    // questão inteira em memória só para comparar 48 caracteres.
+    if (current.text.length < 160) current.text += ' ' + str;
   }
 
   if (current) blocks.push(current);

@@ -5,8 +5,8 @@ import multer from 'multer';
 import supabase from '../lib/supabase';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { extractQuestionsFromPdf } from '../lib/pdf';
-import { extractVisualRegions } from '../lib/pdf-visuals';
-import { classifyQuestion, extractQuestionFromImage } from '../lib/ai';
+import { extractVisualRegions, VisualRegion } from '../lib/pdf-visuals';
+import { classifyQuestion, extractQuestionFromImage, suggestGabarito } from '../lib/ai';
 import { logAudit } from '../lib/audit';
 
 const VISUAL_BUCKET = 'question-visuals';
@@ -29,6 +29,64 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+/**
+ * Casa os recortes visuais de um PDF com as questões extraídas do texto.
+ *
+ * Os dois lados vêm de bibliotecas diferentes (pdf-parse para o texto, pdf.js
+ * para o render), então a numeração de um NÃO acompanha a do outro: uma prova
+ * no formato "QUESTÃO 01" é numerada 1..N pelo render e 2..N+1 pelo texto (a
+ * capa consome o índice 1). Casar por número fazia cada questão receber a
+ * imagem da questão seguinte — ou nenhuma, na última.
+ *
+ * A ordem de tentativa é da evidência mais forte para a mais fraca:
+ *   1. âncora — o próprio texto que abre o bloco, igual nos dois lados;
+ *   2. número da questão;
+ *   3. posição no documento.
+ * Cada recorte é entregue uma única vez.
+ */
+class VisualMatcher {
+  private readonly byAnchor = new Map<string, VisualRegion[]>();
+  private readonly byNumber = new Map<number, VisualRegion[]>();
+  private readonly byOrder = new Map<number, VisualRegion>();
+  private readonly used = new Set<VisualRegion>();
+
+  constructor(private readonly regions: VisualRegion[]) {
+    for (const region of regions) {
+      if (region.anchor) {
+        const list = this.byAnchor.get(region.anchor) ?? [];
+        list.push(region);
+        this.byAnchor.set(region.anchor, list);
+      }
+      const numbered = this.byNumber.get(region.questionNumber) ?? [];
+      numbered.push(region);
+      this.byNumber.set(region.questionNumber, numbered);
+      this.byOrder.set(region.order, region);
+    }
+  }
+
+  /** Recortes ainda não entregues a nenhuma questão. */
+  get unmatchedCount(): number {
+    return this.regions.filter((r) => !this.used.has(r)).length;
+  }
+
+  take(question: { number?: number; anchor?: string }, index: number): VisualRegion[] {
+    const candidates =
+      this.pick(question.anchor ? this.byAnchor.get(question.anchor) : undefined) ??
+      this.pick(question.number !== undefined ? this.byNumber.get(question.number) : undefined) ??
+      this.pick(this.byOrder.has(index) ? [this.byOrder.get(index)!] : undefined) ??
+      [];
+
+    for (const region of candidates) this.used.add(region);
+    return candidates;
+  }
+
+  private pick(list: VisualRegion[] | undefined): VisualRegion[] | null {
+    if (!list) return null;
+    const free = list.filter((r) => !this.used.has(r));
+    return free.length > 0 ? free : null;
+  }
+}
 
 export class ImportController {
   // Formato do Supabase: multer middleware na rota
@@ -149,16 +207,21 @@ export class ImportController {
         const catalog = await this.fetchCatalogForOrg(req.organizationId!);
 
         // B11: renderiza cada página e recorta a região visual de cada questão
+        // O motivo da falha precisa chegar ao professor: antes o erro era
+        // engolido e todo PDF sem imagem recebia o mesmo aviso genérico, o que
+        // tornava impossível distinguir "PDF sem figuras" de "extrator quebrou".
+        let visualFailure: string | null = null;
         const regions = await extractVisualRegions(file.buffer).catch((visualError) => {
           console.error('[import] falha ao extrair visuais:', visualError);
+          visualFailure = visualError instanceof Error ? visualError.message : String(visualError);
           return [];
         });
-        const regionsByNumber = new Map<number, any[]>();
-        for (const region of regions) {
-          const current = regionsByNumber.get(region.questionNumber) ?? [];
-          current.push(region);
-          regionsByNumber.set(region.questionNumber, current);
-        }
+        // O recorte é casado com a questão por ÂNCORA (o texto que abre o
+        // bloco), não pelo número: texto e imagem são extraídos por
+        // bibliotecas diferentes e as duas numerações divergem sempre que a
+        // prova não usa "1." — foi assim que todas as imagens sumiram no PDF
+        // da VUNESP ("QUESTÃO 01"). Número e ordem ficam como fallback.
+        const matcher = new VisualMatcher(regions);
 
         // Classificação assistida por IA (B13)
         const inserted: any[] = [];
@@ -171,7 +234,28 @@ export class ImportController {
             );
           }
 
-          const questionRegions = regionsByNumber.get(q.number ?? -1) ?? [];
+          // Caderno de questões sem tabela de respostas é o caso mais comum:
+          // em vez de importar sem gabarito (e a questão ser rejeitada na
+          // aprovação), a IA resolve a questão e propõe a resposta. Entra
+          // marcada como 'ai' — é palpite para o professor confirmar, nunca é
+          // gravada como se tivesse vindo do documento.
+          let gabarito = q.gabarito ? q.gabarito.toUpperCase() : null;
+          let gabaritoOrigin: string | null = q.gabarito ? q.gabaritoOrigin ?? 'heuristic' : null;
+          let gabaritoConfidence: number | null = q.gabarito ? q.gabaritoConfidence ?? 0.4 : null;
+
+          if (!gabarito && q.statement.trim().length >= 10) {
+            const suggested = await suggestGabarito(q.statement, q.alternatives).catch((aiError) => {
+              console.error('[import] falha ao sugerir gabarito:', aiError);
+              return null;
+            });
+            if (suggested) {
+              gabarito = suggested.gabarito;
+              gabaritoOrigin = 'ai';
+              gabaritoConfidence = suggested.confidence;
+            }
+          }
+
+          const questionRegions = matcher.take(q, index);
           let images = [...q.images];
           for (const [regionIndex, region] of questionRegions.entries()) {
             const key = `pag${region.pageIndex}-q${q.number ?? index + 1}-${regionIndex}.png`;
@@ -190,9 +274,9 @@ export class ImportController {
               statement: q.statement,
               alternatives: q.alternatives.filter((a) => a.text.trim().length > 0),
               images,
-              gabarito: q.gabarito ? q.gabarito.toUpperCase() : null,
-              gabaritoOrigin: q.gabarito ? q.gabaritoOrigin ?? 'heuristic' : null,
-              gabaritoConfidence: q.gabarito ? q.gabaritoConfidence ?? 0.4 : null,
+              gabarito,
+              gabaritoOrigin,
+              gabaritoConfidence,
               catalogItemId: suggestion?.catalogItemId ?? null,
               classificationSource: suggestion?.source ?? null,
               status: 'pending',
@@ -231,10 +315,13 @@ export class ImportController {
         return res.status(201).json({
           job: { ...job, status: 'completed', totalQuestions: inserted.length },
           questions: inserted,
-          warnImages:
-               regionsByNumber.size === 0
-              ? 'Não foi possível extrair automaticamente o visual de cada questão deste PDF. Revise cada questão visualmente antes de aprovar.'
-              : undefined,
+          warnImages: visualFailure
+            ? `Falha ao recortar os visuais deste PDF (${visualFailure}). As questões foram importadas só com o texto — revise antes de aprovar.`
+            : matcher.unmatchedCount > 0
+            ? `${matcher.unmatchedCount} recorte(s) visual(is) deste PDF não puderam ser associados a uma questão. Confira as questões com figura antes de aprovar.`
+            : regions.length === 0
+            ? 'Não foi possível extrair automaticamente o visual de cada questão deste PDF. Revise cada questão visualmente antes de aprovar.'
+            : undefined,
         });
       } catch (extractError) {
         console.error('Erro na extração:', extractError);

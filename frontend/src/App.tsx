@@ -16,6 +16,7 @@ import Exams from './pages/professor/Exams';
 import ExamCreate from './pages/professor/ExamCreate';
 import ExamPreview from './pages/professor/ExamPreview';
 import Results from './pages/professor/Results';
+import ProfessorSolicitacoes from './pages/professor/Solicitacoes';
 import Catalogo from './pages/professor/Catalogo';
 import AlunoHome from './pages/aluno/Home';
 import AlunoTurmas from './pages/aluno/Turmas';
@@ -23,6 +24,7 @@ import AlunoExams from './pages/aluno/Exams';
 import TakeExam from './pages/aluno/TakeExam';
 import ExamResult from './pages/aluno/ExamResult';
 import AlunoResults from './pages/aluno/AlunoResults';
+import AlunoSolicitacoes from './pages/aluno/Solicitacoes';
 import AdminUsuarios from './pages/admin/Usuarios';
 import AdminDashboard from './pages/admin/Dashboard';
 
@@ -83,6 +85,7 @@ function App() {
             <Route path="/professor/simulados/novo" element={<Protected><ProfessorOnly><ExamCreate /></ProfessorOnly></Protected>} />
             <Route path="/professor/simulados/:id" element={<Protected><ProfessorOnly><ExamPreview /></ProfessorOnly></Protected>} />
             <Route path="/professor/resultados" element={<Protected><ProfessorOnly><Results /></ProfessorOnly></Protected>} />
+            <Route path="/professor/solicitacoes" element={<Protected><ProfessorOnly><ProfessorSolicitacoes /></ProfessorOnly></Protected>} />
             <Route path="/professor/catalogo" element={<Protected><ProfessorOnly><Catalogo /></ProfessorOnly></Protected>} />
 
             <Route path="/admin/dashboard" element={<Protected><AdminOnly><AdminDashboard /></AdminOnly></Protected>} />
@@ -93,6 +96,7 @@ function App() {
             <Route path="/aluno/simulados/:id/responder" element={<Protected><AlunoOnly><TakeExam /></AlunoOnly></Protected>} />
             <Route path="/aluno/simulados/:id/resultado" element={<Protected><AlunoOnly><ExamResult /></AlunoOnly></Protected>} />
             <Route path="/aluno/resultados" element={<Protected><AlunoOnly><AlunoResults /></AlunoOnly></Protected>} />
+            <Route path="/aluno/solicitacoes" element={<Protected><AlunoOnly><AlunoSolicitacoes /></AlunoOnly></Protected>} />
             <Route path="/aluno/turmas" element={<Protected><AlunoOnly><AlunoTurmas /></AlunoOnly></Protected>} />
 
             <Route path="*" element={<Navigate to="/" replace />} />

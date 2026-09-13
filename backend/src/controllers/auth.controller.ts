@@ -97,6 +97,30 @@ const findOrCreateOrganization = async (
 };
 
 export class AuthController {
+  /**
+   * Organizações já existentes, para a tela de cadastro oferecer a lista.
+   *
+   * O cadastro cria a organização quando o slug não existe — digitar "mentã"
+   * em vez de "menta" não dá erro, cria uma instituição nova e o aluno fica
+   * invisível para o professor. Escolher de uma lista elimina esse caso.
+   * Exposto sem autenticação porque é a tela de cadastro que consome; devolve
+   * só nome e slug, que é o identificador que o usuário já digitaria à mão.
+   */
+  async listOrganizations(_req: Request, res: Response) {
+    try {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('name, slug')
+        .order('name', { ascending: true })
+        .limit(200);
+      if (error) return res.status(500).json({ error: 'Erro ao listar organizações' });
+      return res.json(data ?? []);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao listar organizações' });
+    }
+  }
+
   async register(req: Request, res: Response) {
     try {
       const parsed = registerSchema.parse(req.body);

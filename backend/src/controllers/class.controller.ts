@@ -215,10 +215,12 @@ export class ClassController {
       if (!ok) return;
 
       const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-      if (query.length < 2) return res.json([]);
       const safeQuery = query.replace(/[%,()]/g, ' ').trim();
-      if (safeQuery.length < 2) return res.json([]);
 
+      // Busca vazia devolve os alunos DISPONÍVEIS da organização em vez de uma
+      // lista vazia. O professor não sabe de cor o nome de quem se cadastrou —
+      // exigir 2 caracteres para mostrar qualquer coisa fazia o modal de
+      // vínculo abrir sempre vazio, como se não houvesse aluno nenhum.
       const { data: linked } = await supabase.from('turma_members').select('userId').eq('turmaId', id);
       const linkedIds = (linked ?? []).map((member) => member.userId);
       let studentsQuery = supabase
@@ -226,9 +228,11 @@ export class ClassController {
         .select('id, name, email, role')
         .eq('organizationId', req.organizationId!)
         .eq('role', 'aluno')
-        .or(`name.ilike.%${safeQuery}%,email.ilike.%${safeQuery}%`)
         .order('name', { ascending: true })
-        .limit(20);
+        .limit(safeQuery.length >= 2 ? 20 : 50);
+      if (safeQuery.length >= 2) {
+        studentsQuery = studentsQuery.or(`name.ilike.%${safeQuery}%,email.ilike.%${safeQuery}%`);
+      }
       if (linkedIds.length > 0) studentsQuery = studentsQuery.not('id', 'in', `(${linkedIds.join(',')})`);
       const { data, error } = await studentsQuery;
       if (error) return res.status(500).json({ error: 'Erro ao pesquisar alunos' });

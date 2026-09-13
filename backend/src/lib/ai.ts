@@ -235,6 +235,100 @@ export async function extractQuestionFromImage(
   return results;
 }
 
+export interface GabaritoSuggestion {
+  gabarito: string;
+  confidence: number;
+  rationale?: string;
+}
+
+/**
+ * Sugere o gabarito de uma questão que veio do PDF sem tabela de respostas.
+ *
+ * Uma prova sem gabarito não pode simplesmente ser rejeitada — é o caso mais
+ * comum de caderno de questões avulso. A sugestão entra SEMPRE como
+ * `gabaritoOrigin: 'ai'`, nunca como 'document': é um palpite que o professor
+ * confere e assume, e a tela mostra isso explicitamente.
+ */
+export async function suggestGabarito(
+  statement: string,
+  alternatives: { letter: string; text: string }[]
+): Promise<GabaritoSuggestion | null> {
+  const aiClient = getGeminiClient();
+  const groq = getGroqClient();
+  if (!aiClient && !groq) return null;
+
+  const isMultiple = alternatives.length >= 2;
+  const letters = alternatives.map((a) => a.letter.toUpperCase());
+
+  const instruction = isMultiple
+    ? 'Você resolve questões de prova. Responda APENAS com JSON ' +
+      '{"gabarito": "LETRA", "confidence": 0.0-1.0, "rationale": "justificativa em uma frase"}. ' +
+      `A letra DEVE ser uma destas: ${letters.join(', ')}. ` +
+      'Se não for possível determinar a resposta com segurança, retorne {"gabarito": null, "confidence": 0}.'
+    : 'Você resolve questões de prova dissertativas. Responda APENAS com JSON ' +
+      '{"gabarito": "resposta final curta", "confidence": 0.0-1.0, "rationale": "justificativa em uma frase"}. ' +
+      'Dê o resultado final (número, expressão ou termo), não a resolução completa. ' +
+      'Se não for possível determinar a resposta com segurança, retorne {"gabarito": null, "confidence": 0}.';
+
+  const content =
+    statement.slice(0, 4000) +
+    (isMultiple ? '\n\n' + alternatives.map((a) => `${a.letter}) ${a.text}`).join('\n') : '');
+
+  const parse = (raw: string): GabaritoSuggestion | null => {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (!parsed.gabarito) return null;
+      const value = String(parsed.gabarito).trim();
+      if (!value) return null;
+      // Numa múltipla escolha, uma letra fora das alternativas é ruído, não resposta.
+      if (isMultiple && !letters.includes(value.toUpperCase())) return null;
+      const confidence = Number(parsed.confidence);
+      return {
+        gabarito: isMultiple ? value.toUpperCase() : value,
+        confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0.5,
+        rationale: parsed.rationale ? String(parsed.rationale).slice(0, 300) : undefined,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  if (aiClient) {
+    try {
+      const response = await aiClient.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: content,
+        config: { temperature: 0.1, systemInstruction: instruction, responseMimeType: 'application/json' },
+      });
+      const suggestion = parse(response.text ?? '');
+      if (suggestion) return suggestion;
+    } catch (error) {
+      console.error('[ai:gemini] falha ao sugerir gabarito:', error);
+    }
+  }
+
+  if (groq) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: instruction },
+          { role: 'user', content },
+        ],
+      });
+      const suggestion = parse(completion.choices[0]?.message?.content ?? '');
+      if (suggestion) return suggestion;
+    } catch (error) {
+      console.error('[ai:groq] falha ao sugerir gabarito:', error);
+    }
+  }
+
+  return null;
+}
+
 function extractJson(raw: string): { level: number | null; match: string | null } | null {
   const match = raw.match(/\{[\s\S]*?\}/);
   if (!match) return null;
