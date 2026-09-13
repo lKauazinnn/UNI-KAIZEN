@@ -30,6 +30,32 @@ const upload = multer({
   },
 });
 
+// A function da Vercel morre em 60s (`maxDuration` no vercel.json). Classificar
+// e resolver cada questão em série estourava esse teto numa prova de 11
+// questões sem gabarito — 22 chamadas de IA enfileiradas. O trabalho de IA roda
+// em paralelo limitado e com prazo: passou do orçamento, as questões restantes
+// entram sem sugestão (o professor usa o botão "Sugerir gabarito" na revisão)
+// em vez de a importação inteira falhar por timeout.
+const AI_BUDGET_MS = Number(process.env.IMPORT_AI_BUDGET_MS) || 30_000;
+const AI_CONCURRENCY = Number(process.env.IMPORT_AI_CONCURRENCY) || 4;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 /**
  * Casa os recortes visuais de um PDF com as questões extraídas do texto.
  *
@@ -223,36 +249,56 @@ export class ImportController {
         // da VUNESP ("QUESTÃO 01"). Número e ordem ficam como fallback.
         const matcher = new VisualMatcher(regions);
 
-        // Classificação assistida por IA (B13)
+        // Classificação assistida por IA (B13) + sugestão de gabarito.
+        // Caderno de questões sem tabela de respostas é o caso mais comum: em
+        // vez de importar sem gabarito (e a questão ser rejeitada na aprovação),
+        // a IA resolve a questão e propõe a resposta. Entra marcada como 'ai' —
+        // é palpite para o professor confirmar, nunca é gravada como se tivesse
+        // vindo do documento.
+        const aiDeadline = Date.now() + AI_BUDGET_MS;
+        const catalogNodes = catalog.map((c) => ({ id: c.id, level: c.level, name: c.name, parentId: c.parentId }));
+
+        const aiByIndex = await mapWithConcurrency(result.questions, AI_CONCURRENCY, async (q) => {
+          if (Date.now() >= aiDeadline) return { suggestion: null, gabaritoSugerido: null };
+
+          const precisaClassificar = q.statement.replace(/\([A-Ea-e]\)\s*$/, '').trim().length > 0;
+          const precisaGabarito = !q.gabarito && q.statement.trim().length >= 10;
+
+          // As duas chamadas são independentes: em paralelo custam o tempo da
+          // mais lenta, não a soma das duas.
+          const [suggestion, gabaritoSugerido] = await Promise.all([
+            precisaClassificar
+              ? classifyQuestion(
+                  q.statement + '\n' + q.alternatives.map((a) => `${a.letter}) ${a.text}`).join('\n'),
+                  catalogNodes
+                ).catch((aiError) => {
+                  console.error('[import] falha ao classificar:', aiError);
+                  return null;
+                })
+              : Promise.resolve(null),
+            precisaGabarito
+              ? suggestGabarito(q.statement, q.alternatives).catch((aiError) => {
+                  console.error('[import] falha ao sugerir gabarito:', aiError);
+                  return null;
+                })
+              : Promise.resolve(null),
+          ]);
+
+          return { suggestion, gabaritoSugerido };
+        });
+
         const inserted: any[] = [];
         for (const [index, q] of result.questions.entries()) {
-          let suggestion: { catalogItemId: string | null; source: 'ai' | 'professor' | null; suggestedName?: string } | null = null;
-          if (q.statement.replace(/\([A-Ea-e]\)\s*$/, '').trim().length > 0) {
-            suggestion = await classifyQuestion(
-              q.statement + '\n' + q.alternatives.map((a) => `${a.letter}) ${a.text}`).join('\n'),
-              catalog.map((c) => ({ id: c.id, level: c.level, name: c.name, parentId: c.parentId }))
-            );
-          }
+          const { suggestion, gabaritoSugerido } = aiByIndex[index];
 
-          // Caderno de questões sem tabela de respostas é o caso mais comum:
-          // em vez de importar sem gabarito (e a questão ser rejeitada na
-          // aprovação), a IA resolve a questão e propõe a resposta. Entra
-          // marcada como 'ai' — é palpite para o professor confirmar, nunca é
-          // gravada como se tivesse vindo do documento.
           let gabarito = q.gabarito ? q.gabarito.toUpperCase() : null;
           let gabaritoOrigin: string | null = q.gabarito ? q.gabaritoOrigin ?? 'heuristic' : null;
           let gabaritoConfidence: number | null = q.gabarito ? q.gabaritoConfidence ?? 0.4 : null;
 
-          if (!gabarito && q.statement.trim().length >= 10) {
-            const suggested = await suggestGabarito(q.statement, q.alternatives).catch((aiError) => {
-              console.error('[import] falha ao sugerir gabarito:', aiError);
-              return null;
-            });
-            if (suggested) {
-              gabarito = suggested.gabarito;
-              gabaritoOrigin = 'ai';
-              gabaritoConfidence = suggested.confidence;
-            }
+          if (!gabarito && gabaritoSugerido) {
+            gabarito = gabaritoSugerido.gabarito;
+            gabaritoOrigin = 'ai';
+            gabaritoConfidence = gabaritoSugerido.confidence;
           }
 
           const questionRegions = matcher.take(q, index);
