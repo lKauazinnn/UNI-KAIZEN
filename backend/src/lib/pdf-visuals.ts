@@ -5,6 +5,7 @@
 // como aparecem para o aluno.
 import { createCanvas, Path2D as NapiPath2D, DOMMatrix as NapiDOMMatrix } from '@napi-rs/canvas';
 import { blockAnchor } from './pdf';
+import { pathToFileURL } from 'url';
 
 export interface VisualRegion {
   questionNumber: number;
@@ -53,12 +54,43 @@ function makeCanvasFactory(): PdfCanvasFactory {
   };
 }
 
+const PDFJS_ENTRY = 'pdfjs-dist/legacy/build/pdf.mjs';
+
+/**
+ * `import()` que sobrevive à compilação para CommonJS.
+ *
+ * O tsconfig usa `"module": "commonjs"`, e nesse modo o tsc reescreve TODO
+ * `await import()` como `require()`. O pdfjs-dist 4.x publica apenas ESM
+ * (`.mjs`), e `require()` de um `.mjs` lança ERR_REQUIRE_ESM — em produção isso
+ * derrubava a extração inteira e todo PDF entrava sem imagem. Em dev nunca
+ * aparecia porque o tsx preserva o `import()` original.
+ *
+ * Montar a expressão com `new Function` a esconde do compilador, então ela
+ * chega ao Node como um `import()` dinâmico de verdade.
+ */
+const importESM: (specifier: string) => Promise<any> = new Function(
+  'specifier',
+  'return import(specifier)'
+) as any;
+
 // Carrega o pdf.js (legacy ESM) uma única vez e prepara o polyfill de canvas.
 async function loadPdfjs(): Promise<any> {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
-      // @ts-ignore - módulo ESM sem tipos; usamos somente getDocument
-      const mod = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      // `require.resolve` é uma referência ESTÁTICA ao pacote: é o que mantém o
+      // pdfjs-dist visível para o file tracing da Vercel. Escondido apenas
+      // atrás do `new Function`, o `.mjs` ficaria fora do bundle e o erro
+      // viraria "module not found". Resolver não carrega o módulo — só devolve
+      // o caminho absoluto, que vira uma file:// URL que o import() aceita.
+      let specifier = PDFJS_ENTRY;
+      try {
+        specifier = pathToFileURL(require.resolve(PDFJS_ENTRY)).href;
+      } catch {
+        // Sem `require` disponível (execução como ESM puro): o specifier nu
+        // resolve normalmente pelo próprio Node.
+      }
+
+      const mod = await importESM(specifier);
       if (typeof (globalThis as any).Path2D === 'undefined') (globalThis as any).Path2D = NapiPath2D;
       if (typeof (globalThis as any).DOMMatrix === 'undefined') (globalThis as any).DOMMatrix = NapiDOMMatrix;
       pdfCanvasFactory = makeCanvasFactory();
