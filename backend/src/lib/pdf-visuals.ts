@@ -55,6 +55,7 @@ function makeCanvasFactory(): PdfCanvasFactory {
 }
 
 const PDFJS_ENTRY = 'pdfjs-dist/legacy/build/pdf.mjs';
+const PDFJS_WORKER = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 
 /**
  * `import()` que sobrevive à compilação para CommonJS.
@@ -91,6 +92,19 @@ async function loadPdfjs(): Promise<any> {
       }
 
       const mod = await importESM(specifier);
+
+      // Sem worker configurado, o pdf.js monta um "fake worker" importando o
+      // pdf.worker.mjs por um caminho que ele calcula em runtime — invisível
+      // para o file tracing da Vercel, então o arquivo ficava fora do bundle e
+      // a extração morria em "Setting up fake worker failed". O require.resolve
+      // estático resolve as duas pontas: obriga o empacotador a incluir o
+      // worker e devolve o caminho real para apontar o workerSrc.
+      try {
+        mod.GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve(PDFJS_WORKER)).href;
+      } catch (workerError) {
+        console.error('[pdf-visuals] worker do pdfjs não resolvido:', workerError);
+      }
+
       if (typeof (globalThis as any).Path2D === 'undefined') (globalThis as any).Path2D = NapiPath2D;
       if (typeof (globalThis as any).DOMMatrix === 'undefined') (globalThis as any).DOMMatrix = NapiDOMMatrix;
       pdfCanvasFactory = makeCanvasFactory();
